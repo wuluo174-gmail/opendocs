@@ -1,0 +1,4 @@
+# S0 baseline lock placeholder.
+# The concrete locked dependency graph will be generated in later stages.
+# S1 additions:
+SQLAlchemy>=2.0,<3.0

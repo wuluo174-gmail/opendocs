@@ -1,0 +1,24 @@
+﻿[app]
+language = "zh-CN"
+output_dir = "OpenDocs_Output"
+local_only = true
+
+[index]
+watch_changes = true
+chunk_size_chars = 900
+chunk_overlap_ratio = 0.12
+
+[retrieval]
+top_k = 12
+fts_weight = 0.55
+dense_weight = 0.35
+freshness_weight = 0.10
+
+[memory]
+m1_ttl_days = 30
+m2_enabled = false
+
+[provider]
+default_mode = "local"
+llm_provider = "ollama"
+embedding_provider = "local"
