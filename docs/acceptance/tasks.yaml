@@ -1,0 +1,885 @@
+schema_version: '1.0'
+project:
+  name: OpenDocs
+  type: desktop-ai-document-manager
+  language: zh-CN
+  generated_on: '2026-03-02'
+  baseline_spec: OpenDocs_工程实施主规范_v1.0.md
+  companion_artifacts:
+  - tasks.yaml
+  - acceptance_cases.md
+  - codex_operator_prompt.md
+source_of_truth_precedence:
+- OpenDocs_工程实施主规范_v1.0.md
+- tasks.yaml
+- acceptance_cases.md
+- codex_operator_prompt.md
+execution_contract:
+  strict_phase_order: true
+  stop_on_failed_gate: true
+  adr_required_for_deviation: true
+  must_not_reask_defined_items: true
+  must_keep_audit_chain: true
+  must_keep_evidence_first: true
+  must_keep_local_first: true
+  must_preview_before_write: true
+  must_provide_stage_report: true
+  stage_report_sections:
+  - 本阶段新增/修改文件列表
+  - 关键实现说明
+  - 运行命令
+  - 测试结果
+  - 已知问题与风险
+  - 出口条件判定
+  - 下一阶段计划
+locked_stack:
+  runtime: Python 3.11
+  ui: PySide6
+  validation: Pydantic v2
+  database: SQLite 3 + FTS5
+  orm: SQLAlchemy 2.x
+  vector_index: hnswlib
+  watcher: watchdog
+  doc_parsing:
+    txt: builtin
+    md: plain text / markdown parser
+    docx: python-docx
+    pdf: PyMuPDF first, pypdf fallback, text-layer only
+  templating: Jinja2
+  tests:
+  - pytest
+  - pytest-qt
+  - pytest-cov
+  packaging: PyInstaller
+  config: TOML + env
+  secret_storage: keyring
+global_redlines:
+  forbidden_by_default:
+  - delete
+  - overwrite_without_preview
+  - ui_direct_db_write
+  - ui_direct_file_move
+  - ui_direct_provider_call
+  - memory_as_fact_citation
+  - external_request_in_local_only_mode
+  - plaintext_api_key_in_logs_or_config
+  required_controls:
+  - 所有事实性回答必须有引用
+  - 证据不足必须拒答
+  - 写操作必须预览 -> 确认 -> 执行 -> 审计 -> 可回滚
+  - 最近一次批量写操作必须支持回滚
+  - 外发必须最小化且可审计
+  - 偏离锁定技术栈必须先出 ADR
+default_commands:
+  bootstrap: python scripts/bootstrap_dev.py
+  unit_test: pytest tests/unit -q
+  integration_test: pytest tests/integration -q
+  e2e_test: pytest tests/e2e -q
+  ui_test: pytest tests/e2e/ui -q
+  coverage: pytest --cov=src/opendocs --cov-report=term-missing
+  fixture_generation: python scripts/generate_fixture_corpus.py
+  acceptance: python scripts/run_acceptance.py --suite full
+  entry_cli: python -m opendocs
+  packaging: pyinstaller packaging/opendocs.spec
+  security_test: pytest tests/integration/security -q
+deliverable_contracts:
+  repo_structure_minimum:
+  - README.md
+  - pyproject.toml
+  - docs/architecture/
+  - docs/adr/
+  - docs/test-plan/
+  - docs/acceptance/
+  - docs/prompts/
+  - src/opendocs/
+  - tests/unit/
+  - tests/integration/
+  - tests/e2e/
+  - tests/performance/
+  - tests/fixtures/
+  - tests/golden/
+  - scripts/
+  artifacts_to_update_each_stage:
+  - 代码
+  - 测试
+  - README 或相关文档
+  - 必要 ADR / test-plan 记录
+  mandatory_reports:
+  - 阶段报告
+  - 测试日志或摘要
+  - 风险记录
+stages:
+- id: S0
+  name: 项目脚手架与基线
+  status: pending
+  depends_on: []
+  objective: 创建可运行仓库、基础依赖、目录骨架、开发脚本、最小入口与 CI 基线。
+  traceability:
+  - Sec7.1
+  - Stage0
+  - FR-014
+  - FR-016
+  - NFR-017
+  - NFR-019
+  - NFR-020
+  modules:
+  - repo
+  - config
+  - logging
+  - exceptions
+  - cli
+  - docs
+  - ci
+  deliverables:
+  - README.md
+  - pyproject.toml
+  - src/opendocs/__init__.py
+  - src/opendocs/__main__.py
+  - src/opendocs/config/
+  - src/opendocs/utils/
+  - docs/adr/0001-baseline.md
+  - scripts/bootstrap_dev.py
+  - tests/unit/test_smoke.py
+  tasks:
+  - id: S0-T01
+    title: 初始化仓库目录与占位模块
+    done_when:
+    - 仓库结构符合主规范 7.1
+    - 存在可导入的 src/opendocs 包
+    - tests/ 与 scripts/ 目录齐备
+  - id: S0-T02
+    title: 建立 pyproject、开发依赖、lint/format/pytest 配置
+    done_when:
+    - pip install -e .[dev] 可执行
+    - pytest 可空跑
+    - 静态检查配置已落地
+  - id: S0-T03
+    title: 建立配置加载、日志初始化、异常基类、应用入口
+    done_when:
+    - python -m opendocs 可启动最小 CLI 或空壳 UI
+    - 日志目录与默认配置路径可解析
+    - 基础异常体系可被后续模块复用
+  - id: S0-T04
+    title: 建立 README、开发引导、ADR-0001 基线决策
+    done_when:
+    - README 覆盖安装、运行、测试、目录结构
+    - ADR 明确锁定技术栈与原因
+  - id: S0-T05
+    title: 建立最小 CI 工作流与 smoke test
+    done_when:
+    - 至少有一个自动化 smoke test
+    - CI 能在无业务代码状态下完成安装与测试
+  test_commands:
+  - python scripts/bootstrap_dev.py
+  - python -m opendocs --help
+  - pytest -q
+  exit_criteria:
+  - 本地可安装依赖
+  - pytest 空跑成功
+  - python -m opendocs 可启动
+  - README 写清运行方式
+  acceptance_refs:
+  - TC-019
+  risk_watch_items:
+  - 不要在此阶段引入与 MVP 无关的大型框架
+  - 避免把后续业务规则硬塞进基础设施层
+- id: S1
+  name: 领域模型与存储基线
+  status: pending
+  depends_on:
+  - S0
+  objective: 完成 SQLite 模式、ORM 模型、初始化与迁移工具、仓储层、样例数据脚本。
+  traceability:
+  - Sec8.1
+  - Sec8.2
+  - Stage1
+  - FR-013
+  - FR-014
+  - NFR-011
+  - NFR-017
+  modules:
+  - domain
+  - storage
+  - repositories
+  - migration
+  - seed
+  deliverables:
+  - src/opendocs/domain/models.py
+  - src/opendocs/storage/db.py
+  - src/opendocs/storage/schema/
+  - src/opendocs/storage/repositories/
+  - scripts/init_db.py
+  - scripts/seed_demo_data.py
+  - tests/unit/storage/
+  tasks:
+  - id: S1-T01
+    title: 实现 Document / Chunk / KnowledgeItem / RelationEdge / MemoryItem / FileOperationPlan / AuditLog 模型
+    done_when:
+    - 字段与主规范 8.1 对齐
+    - 强约束能在 ORM 或服务层表达
+  - id: S1-T02
+    title: 建立数据库初始化、版本迁移与连接管理
+    done_when:
+    - 可在新目录下初始化数据库
+    - 迁移脚本可重复执行
+  - id: S1-T03
+    title: 建立仓储接口与基础 CRUD
+    done_when:
+    - Document/Chunk/Memory/Audit/Plan 可增删改查
+    - 查询接口支持后续应用服务复用
+  - id: S1-T04
+    title: 实现样例 seed 数据脚本与最小查询演示
+    done_when:
+    - seed 后可得到可测试实体
+    - 样例数据可被单测与集成测试复用
+  - id: S1-T05
+    title: 补齐 CRUD、迁移、事务回滚单元测试
+    done_when:
+    - 核心存储相关测试通过
+    - 失败事务不会污染主库
+  test_commands:
+  - python scripts/init_db.py --db-path .tmp/opendocs.db
+  - python scripts/seed_demo_data.py --db-path .tmp/opendocs.db
+  - pytest tests/unit/storage -q
+  exit_criteria:
+  - 可初始化数据库
+  - 可写入 / 查询核心实体
+  - 自动化测试覆盖 CRUD 与迁移
+  acceptance_refs:
+  - TC-016
+  - TC-017
+  risk_watch_items:
+  - 不要把业务逻辑放进 UI 或脚本层
+  - 注意 SQLite FTS5 与常规表同步策略
+- id: S2
+  name: 解析器与切片器
+  status: pending
+  depends_on:
+  - S1
+  objective: 支持 txt、md、docx、文字层 pdf 解析，并输出统一 ParsedDocument 与标准 chunk。
+  traceability:
+  - Sec8.3
+  - Stage2
+  - FR-001
+  - FR-002
+  - FR-015
+  - NFR-006
+  modules:
+  - parsers
+  - indexing/chunking
+  - normalization
+  deliverables:
+  - src/opendocs/parsers/base.py
+  - src/opendocs/parsers/txt_parser.py
+  - src/opendocs/parsers/md_parser.py
+  - src/opendocs/parsers/docx_parser.py
+  - src/opendocs/parsers/pdf_parser.py
+  - src/opendocs/indexing/chunker.py
+  - tests/unit/parsers/
+  tasks:
+  - id: S2-T01
+    title: 定义 parser 注册表、统一 ParsedDocument 模型、错误类型
+    done_when:
+    - 调用方无须关心具体文件类型
+    - 解析失败能返回可审计错误对象
+  - id: S2-T02
+    title: 实现 txt / md / docx / pdf 解析器
+    done_when:
+    - 四类文件均可输出标准化文本与元数据
+    - pdf 仅处理文字层并能保留页码信息（若有）
+  - id: S2-T03
+    title: 实现 heading / paragraph 优先切片与定位保留
+    done_when:
+    - chunk 保留 char/page/paragraph/heading_path 定位
+    - 默认重叠比例落在 10%-15%
+  - id: S2-T04
+    title: 实现失败隔离、极短文档与破损文档处理
+    done_when:
+    - 单文件失败不拖垮批任务
+    - parse_status 可区分 success/partial/failed
+  - id: S2-T05
+    title: 补齐解析正确性与切片边界单测
+    done_when:
+    - 四类解析器均有样例用例
+    - chunk 定位字段可被断言
+  test_commands:
+  - pytest tests/unit/parsers -q
+  - pytest tests/unit/indexing/test_chunker.py -q
+  exit_criteria:
+  - 四类文档均可解析
+  - 失败文件不会拖垮批任务
+  - chunk 保留定位信息
+  acceptance_refs:
+  - TC-001
+  - TC-002
+  risk_watch_items:
+  - 避免把解析逻辑与索引写入逻辑耦合
+  - 注意中文标题/段落切分与 Markdown 标题路径保留
+- id: S3
+  name: 扫描、全量索引与增量更新
+  status: pending
+  depends_on:
+  - S2
+  objective: 建立根目录扫描、全量索引、监听增量更新、重建幂等与失败重试闭环。
+  traceability:
+  - FR-001
+  - FR-002
+  - Stage3
+  - NFR-002
+  - NFR-010
+  - NFR-011
+  modules:
+  - source_service
+  - scan
+  - indexing
+  - watcher
+  - fts
+  - hnsw
+  deliverables:
+  - src/opendocs/app/source_service.py
+  - src/opendocs/app/index_service.py
+  - src/opendocs/indexing/scanner.py
+  - src/opendocs/indexing/index_builder.py
+  - src/opendocs/indexing/watcher.py
+  - tests/integration/indexing/
+  tasks:
+  - id: S3-T01
+    title: 实现文档源配置、排除规则、scan_run 记录
+    done_when:
+    - 可保存多个根目录配置
+    - 扫描输出纳入/排除/失败统计
+    - 生成 scan_run 与审计记录
+  - id: S3-T02
+    title: 实现全量索引流水线：解析、哈希、chunk、SQLite、FTS5、HNSW 写入
+    done_when:
+    - 首次全量索引可完成
+    - Document 与 Chunk 记录、FTS5 与向量索引保持一致
+  - id: S3-T03
+    title: 实现新增/修改/删除的增量同步与监听器
+    done_when:
+    - 文件变化后索引同步
+    - 删除文件不再出现在检索结果
+  - id: S3-T04
+    title: 实现重建索引、故障恢复与幂等保护
+    done_when:
+    - 重建不产生脏重复数据
+    - 失败后可重试且不污染已有索引
+  - id: S3-T05
+    title: 补齐扫描/索引集成测试
+    done_when:
+    - 覆盖新增、修改、删除、排除规则、重建幂等
+  test_commands:
+  - pytest tests/integration/indexing -q
+  - python scripts/rebuild_index.py --source tests/fixtures/generated/corpus_main
+  exit_criteria:
+  - 初次全量索引可运行
+  - 文件增删改后索引同步
+  - 重建索引幂等
+  acceptance_refs:
+  - TC-001
+  - TC-002
+  - TC-003
+  - TC-004
+  risk_watch_items:
+  - 确保 FTS 与向量索引更新事务的一致性策略
+  - 文件系统事件去抖动与重复事件处理
+- id: S4
+  name: 混合检索与证据定位
+  status: pending
+  depends_on:
+  - S3
+  objective: 完成自然语言搜索、过滤器、分数融合、证据引用结构、打开文件与片段定位。
+  traceability:
+  - FR-003
+  - FR-015
+  - Stage4
+  - NFR-001
+  - NFR-004
+  modules:
+  - retrieval
+  - search_service
+  - evidence_locator
+  - cli_or_ui_shell
+  deliverables:
+  - src/opendocs/retrieval/search_pipeline.py
+  - src/opendocs/retrieval/rerank.py
+  - src/opendocs/retrieval/evidence.py
+  - src/opendocs/app/search_service.py
+  - tests/unit/retrieval/
+  - tests/integration/search/
+  tasks:
+  - id: S4-T01
+    title: 实现 FTS5 + dense fusion 检索管线
+    done_when:
+    - 支持 lexical_score / dense_score / freshness_boost 融合
+    - 中文搜索与同义表达具备基本鲁棒性
+  - id: S4-T02
+    title: 实现目录、分类、标签、文件类型、时间、敏感级过滤器
+    done_when:
+    - 过滤器可组合使用
+    - 过滤后仍返回可引用片段
+  - id: S4-T03
+    title: 实现统一引用结构、quote_preview 与源文件定位
+    done_when:
+    - 结果包含 path/page_or_paragraph/char_range/quote_preview
+    - 至少能打开文件所在位置
+  - id: S4-T04
+    title: 实现 SearchService 与最小搜索展示壳
+    done_when:
+    - CLI 或 UI 可展示标题、路径、摘要、时间、分数、引用
+  - id: S4-T05
+    title: 补齐黄金查询与相关性测试
+    done_when:
+    - Top10 命中率满足设定阈值
+    - 无结果场景可稳定返回空结果
+  test_commands:
+  - pytest tests/unit/retrieval -q
+  - pytest tests/integration/search -q
+  exit_criteria:
+  - 黄金查询集通过率达标
+  - UI 或 CLI 可展示引用结果
+  - 至少能打开文件所在位置
+  acceptance_refs:
+  - TC-005
+  - TC-018
+  risk_watch_items:
+  - 不要仅做纯向量或纯关键词检索
+  - 引用对象必须可打开、可验证
+- id: S5
+  name: 问答、摘要与洞察
+  status: pending
+  depends_on:
+  - S4
+  objective: 实现 RAG 问答、证据包、引用校验器、证据不足拒答、冲突检测、多文档摘要与洞察导出。
+  traceability:
+  - FR-004
+  - FR-005
+  - Stage5
+  - NFR-006
+  - NFR-007
+  - NFR-008
+  modules:
+  - qa
+  - summary
+  - insight_extraction
+  - citation_validator
+  deliverables:
+  - src/opendocs/qa/orchestrator.py
+  - src/opendocs/qa/citation_validator.py
+  - src/opendocs/qa/conflict_detector.py
+  - src/opendocs/app/qa_service.py
+  - tests/integration/qa/
+  tasks:
+  - id: S5-T01
+    title: 实现问题类型识别、证据包构造、模型调用编排
+    done_when:
+    - 事实问答/汇总/对比/时间线 能进入不同编排路径
+    - 证据包具备来源与定位信息
+  - id: S5-T02
+    title: 实现引用校验器与关键事实对齐检查
+    done_when:
+    - 关键事实都有至少一个证据片段支撑
+    - 引用不存在或相反时能降级处理
+  - id: S5-T03
+    title: 实现证据不足拒答与冲突证据展示
+    done_when:
+    - 证据不足时输出模板 B
+    - 冲突问题至少展示两个冲突来源
+  - id: S5-T04
+    title: 实现单文档摘要、多文档汇总、决策/风险/待办提取与 Markdown 导出
+    done_when:
+    - 摘要与洞察均可回溯到来源
+    - 导出 Markdown 含引用信息
+  - id: S5-T05
+    title: 补齐 QA/摘要集成测试与拒答测试
+    done_when:
+    - 通过事实问答、证据不足、冲突、多文档摘要用例
+  test_commands:
+  - pytest tests/integration/qa -q
+  - pytest tests/integration/summary -q
+  exit_criteria:
+  - 事实问答默认附引用
+  - 证据不足时不胡答
+  - 冲突案例能正确提示
+  acceptance_refs:
+  - TC-006
+  - TC-007
+  - TC-008
+  - TC-009
+  risk_watch_items:
+  - 严格执行文档证据优先于记忆
+  - 避免把生成模型输出直接当作事实写回
+- id: S6
+  name: 分类、归档计划与回滚
+  status: pending
+  depends_on:
+  - S5
+  objective: 实现虚拟归档、物理归档预览、受控执行、审计记录与最近一次批量回滚。
+  traceability:
+  - FR-006
+  - FR-011
+  - Stage6
+  - NFR-009
+  - NFR-013
+  modules:
+  - classification
+  - archive_service
+  - planner
+  - executor
+  - rollback
+  - audit
+  deliverables:
+  - src/opendocs/classification/classifier.py
+  - src/opendocs/classification/path_planner.py
+  - src/opendocs/app/archive_service.py
+  - src/opendocs/audit/rollback.py
+  - tests/integration/archive/
+  tasks:
+  - id: S6-T01
+    title: 实现分类器、标签与置信度输出
+    done_when:
+    - 能按项目/主题/时间/自定义标签给出分类建议
+    - 结果含 confidence
+  - id: S6-T02
+    title: 实现目标路径规划器与虚拟归档结果写入
+    done_when:
+    - 在不改动物理文件时可输出目标路径建议
+    - 规划结果可被预览页面消费
+  - id: S6-T03
+    title: 实现 FileOperationPlan 预览、确认、执行链路
+    done_when:
+    - 无确认不能执行 move/rename/create
+    - 执行前能看到变更清单与风险提示
+  - id: S6-T04
+    title: 实现审计与最近一次批量回滚
+    done_when:
+    - 记录原路径、目标路径、哈希、时间、trace_id
+    - 最近一次批量操作可撤销
+  - id: S6-T05
+    title: 补齐路径冲突、用户取消、批量回滚集成测试
+    done_when:
+    - 用户拒绝后零写操作
+    - 路径冲突默认停止不覆盖
+  test_commands:
+  - pytest tests/integration/archive -q
+  exit_criteria:
+  - 用户拒绝后零写操作
+  - 最近一次批量操作可回滚
+  - 路径冲突有保护
+  acceptance_refs:
+  - TC-010
+  - TC-011
+  risk_watch_items:
+  - delete 默认无入口
+  - 审计与回滚实现必须先于“更智能”的自动归档扩展
+- id: S7
+  name: 生成与模板系统
+  status: pending
+  depends_on:
+  - S6
+  objective: 实现模板生成、自由生成、引用插入、草稿编辑、保存确认与输出目录管理。
+  traceability:
+  - FR-007
+  - Stage7
+  - NFR-005
+  - NFR-013
+  modules:
+  - generation
+  - templates
+  - draft_storage
+  - editor
+  deliverables:
+  - src/opendocs/generation/templates/
+  - src/opendocs/generation/pipeline.py
+  - src/opendocs/app/generation_service.py
+  - tests/integration/generation/
+  tasks:
+  - id: S7-T01
+    title: 建立模板库：会议纪要、周报、月报、项目摘要、风险清单、复盘框架
+    done_when:
+    - 模板可配置输入变量
+    - 模板文件可独立维护
+  - id: S7-T02
+    title: 实现基于检索证据的草稿生成与引用插入
+    done_when:
+    - 生成结果带引用区块或尾注区块
+    - 引用可被后续 UI 检查
+  - id: S7-T03
+    title: 实现草稿编辑与保存确认
+    done_when:
+    - 保存前可编辑
+    - 保存到默认或自定义输出路径前必须确认
+  - id: S7-T04
+    title: 实现输出目录管理与保存审计
+    done_when:
+    - 默认输出到 OpenDocs_Output
+    - 保存操作有审计记录
+  - id: S7-T05
+    title: 补齐模板生成、自由生成、路径正确性测试
+    done_when:
+    - 月报/周报/纪要模板通过集成测试
+  test_commands:
+  - pytest tests/integration/generation -q
+  exit_criteria:
+  - 周报 / 月报 / 纪要模板可用
+  - 保存前可编辑
+  - 输出含引用
+  acceptance_refs:
+  - TC-012
+  risk_watch_items:
+  - 不要生成无引用的事实草稿
+  - 保存动作也属于需确认写操作
+- id: S8
+  name: 记忆体系与冲突治理
+  status: pending
+  depends_on:
+  - S7
+  objective: 实现 M0/M1/M2、TTL、升级规则、冲突检测、记忆管理与审计。
+  traceability:
+  - FR-008
+  - FR-009
+  - FR-010
+  - Stage8
+  - NFR-012
+  modules:
+  - memory
+  - conflict_resolution
+  - context_budgeting
+  deliverables:
+  - src/opendocs/memory/service.py
+  - src/opendocs/memory/policy.py
+  - src/opendocs/qa/context_budget.py
+  - tests/unit/memory/
+  - tests/integration/memory/
+  tasks:
+  - id: S8-T01
+    title: 实现 M0/M1/M2 数据结构与读写服务
+    done_when:
+    - M0 仅会话有效不落盘
+    - M1/M2 满足持久化条件后才落盘
+  - id: S8-T02
+    title: 实现明确确认升级、频次阈值、TTL 清理与降权
+    done_when:
+    - M1 TTL 默认 30 天
+    - M2 默认关闭且显式开启后才可写入
+  - id: S8-T03
+    title: 实现记忆与文档证据冲突处理、上下文预算裁剪顺序
+    done_when:
+    - 冲突时文档证据优先
+    - 超预算时优先保留关键证据
+  - id: S8-T04
+    title: 实现记忆管理操作：查看、禁用、删除、修正
+    done_when:
+    - 删除或禁用后不可再被召回
+    - 所有记忆操作有审计
+  - id: S8-T05
+    title: 补齐 TTL、冲突、清理、预算裁剪测试
+    done_when:
+    - M1 TTL、M2 开关、冲突修正、长上下文保留证据测试通过
+  test_commands:
+  - pytest tests/unit/memory -q
+  - pytest tests/integration/memory -q
+  exit_criteria:
+  - M2 默认关闭
+  - 清理后不可召回
+  - 冲突可定位和处理
+  acceptance_refs:
+  - TC-013
+  - TC-014
+  risk_watch_items:
+  - 禁止让记忆覆盖文档证据
+  - 避免将临时聊天上下文永久化
+- id: S9
+  name: 桌面 UI 完整化
+  status: pending
+  depends_on:
+  - S8
+  objective: 完成可操作桌面产品壳：初始化向导、搜索主界面、证据侧栏、归档预览、生成编辑、记忆管理、审计回滚、设置页。
+  traceability:
+  - Sec13
+  - Stage9
+  - FR-015
+  - NFR-021
+  - NFR-022
+  modules:
+  - ui
+  - viewmodels
+  - controllers
+  deliverables:
+  - src/opendocs/ui/main_window.py
+  - src/opendocs/ui/pages/
+  - src/opendocs/ui/widgets/
+  - tests/e2e/ui/
+  tasks:
+  - id: S9-T01
+    title: 实现初始化向导与设置页
+    done_when:
+    - 可配置根目录、模式、提供商、首次索引
+  - id: S9-T02
+    title: 实现搜索与问答主界面、结果列表、引用面板、原文预览
+    done_when:
+    - 答案旁边能直接看到引用与原文片段
+    - 用户可点击跳转定位
+  - id: S9-T03
+    title: 实现洞察、归档预览、生成编辑器、记忆管理、审计回滚页面
+    done_when:
+    - 核心业务均能通过 UI 完成
+    - 高风险操作界面中有风险提示与确认
+  - id: S9-T04
+    title: 整理 UI 与应用服务边界，禁止 UI 直连底层存储和提供商
+    done_when:
+    - UI 只通过应用服务层触发业务
+  - id: S9-T05
+    title: 补齐 pytest-qt UI 冒烟与关键交互测试
+    done_when:
+    - 引用跳转、预览确认、回滚入口、设置切换有自动化测试
+  test_commands:
+  - pytest tests/e2e/ui -q
+  - pytest tests/e2e/test_desktop_demo.py -q
+  exit_criteria:
+  - 核心业务均可通过 UI 完成
+  - 高风险操作均有预览和确认
+  - 界面可完成端到端演示
+  acceptance_refs:
+  - TC-018
+  - TC-019
+  - TC-020
+  risk_watch_items:
+  - 不要把复杂业务规则散落进 QWidget 事件处理器
+  - 界面必须符合‘识别优于回忆’原则
+- id: S10
+  name: 隐私模式、提供商适配与安全收口
+  status: pending
+  depends_on:
+  - S9
+  objective: 实现提供商路由、Local-Only / Hybrid / Cloud-Assisted 模式、keyring、外发最小化与外发审计。
+  traceability:
+  - FR-012
+  - FR-013
+  - FR-014
+  - Stage10
+  - NFR-014
+  - NFR-015
+  - NFR-016
+  modules:
+  - provider
+  - routing
+  - privacy
+  - keyring
+  - audit
+  deliverables:
+  - src/opendocs/provider/base.py
+  - src/opendocs/provider/ollama_adapter.py
+  - src/opendocs/provider/cloud_adapters.py
+  - src/opendocs/app/provider_service.py
+  - tests/integration/provider/
+  tasks:
+  - id: S10-T01
+    title: 实现 Ollama、本地优先路由与云端适配抽象
+    done_when:
+    - ProviderService 可列出、测试、路由提供商
+    - 本地和云端适配层保持统一接口
+  - id: S10-T02
+    title: 实现 Local-Only / Hybrid / Cloud-Assisted 模式与外发最小化策略
+    done_when:
+    - Local-Only 下 0 外发
+    - Cloud-Assisted 仅发送最小必要证据片段
+  - id: S10-T03
+    title: 集成 keyring 与配置覆盖机制
+    done_when:
+    - API Key 不落盘到明文配置与日志
+    - 缺失密钥时提示清晰
+  - id: S10-T04
+    title: 实现外发审计、网络模式可视化与安全测试
+    done_when:
+    - 每次外发都记录目标模型、片段摘要、文档数、字符/Token 量
+    - 界面可查看当前网络模式
+  - id: S10-T05
+    title: 补齐 Local-Only 网络探针、外发最小化、密钥脱敏测试
+    done_when:
+    - 本地模式网络为 0
+    - 日志和异常中无明文密钥
+  test_commands:
+  - pytest tests/integration/provider -q
+  - pytest tests/integration/security -q
+  exit_criteria:
+  - 纯本地模式 0 外发
+  - 云端模式可查看外发摘要
+  - 密钥不落盘日志
+  acceptance_refs:
+  - TC-015
+  - TC-016
+  - TC-017
+  risk_watch_items:
+  - 任何外发都必须可解释、可审计
+  - 本地模式测试不能只靠代码阅读，必须有网络探针或 monkeypatch 断言
+- id: S11
+  name: 性能调优、打包与验收
+  status: pending
+  depends_on:
+  - S10
+  objective: 完成黄金语料、验收脚本、性能基准、打包产物、用户文档与最终交付报告。
+  traceability:
+  - FR-016
+  - Sec17
+  - Sec18
+  - Sec19
+  - Stage11
+  - NFR-001~023
+  modules:
+  - fixtures
+  - acceptance
+  - performance
+  - packaging
+  - docs
+  deliverables:
+  - scripts/generate_fixture_corpus.py
+  - scripts/run_acceptance.py
+  - tests/performance/
+  - packaging/
+  - docs/acceptance/
+  - docs/user-guide.md
+  tasks:
+  - id: S11-T01
+    title: 实现黄金语料与查询集生成器
+    done_when:
+    - 生成至少满足 18.1 的语料构成
+    - 包含冲突、破损、极短文档与多命名风格样本
+  - id: S11-T02
+    title: 实现一键验收脚本、JSON/Markdown 报告与用例映射
+    done_when:
+    - run_acceptance.py 能按 case ID 执行
+    - 报告显示通过/失败/风险项
+  - id: S11-T03
+    title: 运行性能基准并对搜索、引用定位、冷启动做调优
+    done_when:
+    - NFR-001~005 有量化结果
+    - 关键瓶颈有记录与已知权衡
+  - id: S11-T04
+    title: 完成 PyInstaller 打包与三平台发布目录策略
+    done_when:
+    - 至少当前平台产出可运行发布目录
+    - 三平台构建流程与依赖记录完整
+  - id: S11-T05
+    title: 整理用户文档、故障排查、隐私说明、最终交付报告
+    done_when:
+    - README、用户手册、配置示例、验收报告完整
+    - 整体交付 DoD 满足
+  test_commands:
+  - python scripts/generate_fixture_corpus.py --profile acceptance
+  - python scripts/run_acceptance.py --suite full
+  - pytest tests/performance -q
+  - pyinstaller packaging/opendocs.spec
+  exit_criteria:
+  - 验收脚本全绿
+  - 三平台至少产出发布目录
+  - 形成最终交付包
+  acceptance_refs:
+  - TC-019
+  - TC-020
+  risk_watch_items:
+  - 不要把验收脚本写成只会‘看起来通过’的演示脚本
+  - 跨平台若无法在当前主机全量验证，必须留出构建矩阵与待验证项，而不是跳过
+acceptance_authority:
+  document: acceptance_cases.md
+  rule: 该文件主导最终通过/失败判定；tasks.yaml 负责施工排序与阶段门禁。

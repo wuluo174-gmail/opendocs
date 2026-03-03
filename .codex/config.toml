@@ -1,0 +1,19 @@
+# .codex/config.toml
+# Project-scoped defaults for OpenDocs
+# Put this file at: .codex/config.toml
+
+model = "gpt-5.2-codex"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+web_search = "disabled"
+model_reasoning_effort = "medium"
+personality = "friendly"
+
+[sandbox_workspace_write]
+network_access = false
+writable_roots = []
+
+# Windows native fallback only.
+# If you use WSL workspaces, this section may be unnecessary.
+[windows]
+sandbox = "elevated"
