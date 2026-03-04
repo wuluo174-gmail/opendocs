@@ -27,6 +27,26 @@ def _utcnow_naive() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def _uuid_check_sql(column: str) -> str:
+    normalized = f"replace({column}, '-', '')"
+    return (
+        f"length({column}) = 36 AND "
+        f"substr({column}, 9, 1) = '-' AND "
+        f"substr({column}, 14, 1) = '-' AND "
+        f"substr({column}, 19, 1) = '-' AND "
+        f"substr({column}, 24, 1) = '-' AND "
+        f"length({normalized}) = 32 AND "
+        f"lower({column}) = {column} AND "
+        f"NOT {normalized} GLOB '*[^0-9a-f]*'"
+    )
+
+
+def _sha256_check_sql(column: str) -> str:
+    return (
+        f"length({column}) = 64 AND lower({column}) = {column} AND NOT {column} GLOB '*[^0-9a-f]*'"
+    )
+
+
 class DocumentModel(Base):
     __tablename__ = "documents"
     __table_args__ = (
@@ -42,6 +62,12 @@ class DocumentModel(Base):
             "sensitivity IN ('public', 'internal', 'sensitive')",
             name="ck_documents_sensitivity",
         ),
+        CheckConstraint(_uuid_check_sql("doc_id"), name="ck_documents_doc_id_uuid"),
+        CheckConstraint(
+            _uuid_check_sql("source_root_id"),
+            name="ck_documents_source_root_id_uuid",
+        ),
+        CheckConstraint(_sha256_check_sql("hash_sha256"), name="ck_documents_hash_sha256"),
     )
 
     doc_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -68,6 +94,8 @@ class ChunkModel(Base):
     __table_args__ = (
         UniqueConstraint("doc_id", "chunk_index", name="uq_chunks_doc_index"),
         CheckConstraint("char_end >= char_start", name="ck_chunks_char_range"),
+        CheckConstraint(_uuid_check_sql("chunk_id"), name="ck_chunks_chunk_id_uuid"),
+        CheckConstraint(_uuid_check_sql("doc_id"), name="ck_chunks_doc_id_uuid"),
     )
 
     chunk_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -92,6 +120,14 @@ class ChunkModel(Base):
 
 class KnowledgeItemModel(Base):
     __tablename__ = "knowledge_items"
+    __table_args__ = (
+        CheckConstraint(
+            _uuid_check_sql("knowledge_id"),
+            name="ck_knowledge_items_knowledge_id_uuid",
+        ),
+        CheckConstraint(_uuid_check_sql("doc_id"), name="ck_knowledge_items_doc_id_uuid"),
+        CheckConstraint(_uuid_check_sql("chunk_id"), name="ck_knowledge_items_chunk_id_uuid"),
+    )
 
     knowledge_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     doc_id: Mapped[str] = mapped_column(
@@ -118,6 +154,11 @@ class RelationEdgeModel(Base):
         CheckConstraint(
             "relation_type IN ('related_to', 'mentions', 'derived_from', 'same_project')",
             name="ck_relation_edges_relation_type",
+        ),
+        CheckConstraint(_uuid_check_sql("edge_id"), name="ck_relation_edges_edge_id_uuid"),
+        CheckConstraint(
+            "evidence_chunk_id IS NULL OR " + _uuid_check_sql("evidence_chunk_id"),
+            name="ck_relation_edges_evidence_chunk_id_uuid",
         ),
     )
 
@@ -159,6 +200,7 @@ class MemoryItemModel(Base):
             "key",
             name="uq_memory_items_scope_key",
         ),
+        CheckConstraint(_uuid_check_sql("memory_id"), name="ck_memory_items_memory_id_uuid"),
     )
 
     memory_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -194,6 +236,7 @@ class FileOperationPlanModel(Base):
             "item_count >= 0",
             name="ck_file_operation_plans_item_count_non_negative",
         ),
+        CheckConstraint(_uuid_check_sql("plan_id"), name="ck_file_operation_plans_plan_id_uuid"),
     )
 
     plan_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -215,6 +258,7 @@ class AuditLogModel(Base):
             "target_type IN ('document', 'plan', 'memory', 'answer')",
             name="ck_audit_logs_target_type",
         ),
+        CheckConstraint(_uuid_check_sql("audit_id"), name="ck_audit_logs_audit_id_uuid"),
     )
 
     audit_id: Mapped[str] = mapped_column(String(36), primary_key=True)

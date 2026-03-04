@@ -18,10 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    print(
-        "blocked: run_acceptance is reserved for S11. "
-        f"requested suite={args.suite}"
-    )
+    print(f"blocked: run_acceptance is reserved for S11. requested suite={args.suite}")
     return 2
 
 

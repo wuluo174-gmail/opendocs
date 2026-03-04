@@ -1,4 +1,4 @@
-﻿"""Settings models and loading helpers."""
+"""Settings models and loading helpers."""
 
 from __future__ import annotations
 
@@ -75,10 +75,7 @@ def resolve_app_root(config_path: str | Path | None = None) -> Path:
     """Resolve OpenDocs runtime root directory from a settings path."""
     resolved_settings = resolve_settings_path(config_path).resolve()
     # Canonical layout keeps settings in "<root>/config/settings.toml".
-    if (
-        resolved_settings.name == "settings.toml"
-        and resolved_settings.parent.name == "config"
-    ):
+    if resolved_settings.name == "settings.toml" and resolved_settings.parent.name == "config":
         return resolved_settings.parent.parent
     # For explicit non-canonical config files, keep logs near that config.
     return resolved_settings.parent

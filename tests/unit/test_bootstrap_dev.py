@@ -106,6 +106,16 @@ def test_pyproject_requires_python_is_locked_to_311() -> None:
     assert data["project"]["requires-python"] == ">=3.11,<3.12"
 
 
+def test_pyproject_has_ruff_format_baseline_config() -> None:
+    pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    assert data["tool"]["ruff"]["format"] == {
+        "quote-style": "double",
+        "indent-style": "space",
+        "line-ending": "lf",
+    }
+
+
 def test_requirements_lock_header_mentions_python311_baseline() -> None:
     lock_path = Path(__file__).resolve().parents[2] / "requirements.lock"
     header_line = lock_path.read_text(encoding="utf-8").splitlines()[2]

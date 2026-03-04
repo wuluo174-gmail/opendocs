@@ -1,4 +1,4 @@
-﻿"""OpenDocs package."""
+"""OpenDocs package."""
 
 __all__ = ["__version__"]
 

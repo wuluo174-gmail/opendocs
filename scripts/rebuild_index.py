@@ -19,10 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    print(
-        "blocked: rebuild_index is reserved for S3. "
-        f"requested source={args.source}"
-    )
+    print(f"blocked: rebuild_index is reserved for S3. requested source={args.source}")
     return 2
 
 

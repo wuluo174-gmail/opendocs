@@ -10,6 +10,8 @@
 - 修改 `src/opendocs/cli/main.py`
 - 修改 `tests/unit/test_bootstrap_dev.py`
 - 修改 `tests/unit/test_smoke.py`
+- 修改 `.gitignore`
+- 新增 `dist/.gitkeep`
 
 ## 2. 关键实现说明
 - 补齐主规范 7.1 在 `scripts/` 中列出的三个脚本入口，占位实现统一返回 `2`（blocked），避免误判为已实现。
@@ -17,6 +19,7 @@
 - 增加 smoke 测试覆盖：
   - S0 关键脚本存在性；
   - 显式配置路径时日志落到对应根目录。
+- 对齐主规范 7.1 的仓库结构，新增 `dist/.gitkeep` 作为发布目录占位，并通过 `.gitignore` 仅放行该占位文件。
 
 ## 3. 运行命令
 - `./.venv/bin/python scripts/bootstrap_dev.py`
@@ -61,3 +64,9 @@
 - `bootstrap_dev.py` 的 editable 安装增加 `--no-build-isolation`，确保离线/受限网络下不因构建隔离拉取依赖而失败。
 - 修复 CI `ruff` 门禁失败：仓储层 5 个 `delete` 方法中的长字符串改为多行表达，消除 `E501`。
 - S0/S1 的 `tasks.yaml` 阶段命令切换为 `.venv` 解释器与 `pytest` 路径，避免环境缺少 `python` 别名导致复验失败。
+- 修正 S0 验收映射口径：`acceptance_refs` 从 `TC-019` 调整为 `[]`，避免把 S11 的“一键验收”能力前置到 S0 阶段门禁。
+- 对齐占位语料脚本 CLI 契约：`scripts/generate_fixture_corpus.py` 新增 `--profile` 与 `--output` 参数（保留 `--output-dir` 兼容别名），与 `acceptance_cases.md` 用法一致。
+- 补充 S0 smoke 测试：断言 `generate_fixture_corpus.py --profile acceptance --output .tmp/corpus` 返回 `2`（blocked）且输出包含请求参数，防止后续参数回归漂移。
+- 修复主规范 7.1 目录轻微偏差：新增 `dist/.gitkeep`，并在 `.gitignore` 中仅豁免该占位文件，保证仓库可追踪 `dist/` 目录骨架且不引入构建产物。
+- 修复 CI 格式门禁漂移：执行 `ruff format` 对齐 `src/opendocs/domain/models.py` 与 `tests/unit/storage/test_migrations.py`，`ruff format --check .` 恢复通过。
+- 修复 README 在 zsh 的安装命令复现问题：将 `pip install -e .[dev]` 调整为可直接执行的 `python3.11 -m pip install -e '.[dev]'`，并补充 Windows PowerShell 对应写法。

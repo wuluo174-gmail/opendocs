@@ -1,1 +1,1 @@
-﻿"""OpenDocs package module."""
+"""OpenDocs package module."""

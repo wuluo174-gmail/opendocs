@@ -1,4 +1,4 @@
-﻿"""OpenDocs exception hierarchy."""
+"""OpenDocs exception hierarchy."""
 
 from __future__ import annotations
 

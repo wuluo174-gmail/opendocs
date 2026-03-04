@@ -1,4 +1,4 @@
-﻿"""Utility helpers."""
+"""Utility helpers."""
 
 from .logging import init_logging
 

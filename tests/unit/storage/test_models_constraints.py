@@ -57,6 +57,50 @@ def test_document_file_type_check_constraint(session: Session) -> None:
         session.commit()
 
 
+def test_document_doc_id_must_be_uuid(session: Session) -> None:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    document = DocumentModel(
+        doc_id="not-a-uuid",
+        path="C:/demo/invalid-id.md",
+        relative_path="invalid-id.md",
+        source_root_id=str(uuid.uuid4()),
+        source_path="C:/demo/invalid-id.md",
+        hash_sha256="a" * 64,
+        title="bad id",
+        file_type="md",
+        size_bytes=10,
+        created_at=now,
+        modified_at=now,
+        parse_status="success",
+        sensitivity="internal",
+    )
+    session.add(document)
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def test_document_hash_must_be_lower_hex_sha256(session: Session) -> None:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    document = DocumentModel(
+        doc_id=str(uuid.uuid4()),
+        path="C:/demo/invalid-hash.md",
+        relative_path="invalid-hash.md",
+        source_root_id=str(uuid.uuid4()),
+        source_path="C:/demo/invalid-hash.md",
+        hash_sha256="G" * 64,
+        title="bad hash",
+        file_type="md",
+        size_bytes=10,
+        created_at=now,
+        modified_at=now,
+        parse_status="success",
+        sensitivity="internal",
+    )
+    session.add(document)
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
 def test_memory_type_check_constraint(session: Session) -> None:
     memory = MemoryItemModel(
         memory_id=str(uuid.uuid4()),

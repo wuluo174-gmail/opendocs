@@ -1,4 +1,4 @@
-﻿"""CLI entrypoint for the OpenDocs baseline app."""
+"""CLI entrypoint for the OpenDocs baseline app."""
 
 from __future__ import annotations
 

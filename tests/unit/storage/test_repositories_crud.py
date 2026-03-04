@@ -9,19 +9,24 @@ import pytest
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
+from opendocs.app import FileOperationService
 from opendocs.domain.models import (
     AuditLogModel,
     ChunkModel,
     DocumentModel,
     FileOperationPlanModel,
+    KnowledgeItemModel,
     MemoryItemModel,
+    RelationEdgeModel,
 )
 from opendocs.storage.repositories import (
     AuditRepository,
     ChunkRepository,
     DocumentRepository,
+    KnowledgeRepository,
     MemoryRepository,
     PlanRepository,
+    RelationRepository,
 )
 
 
@@ -45,6 +50,17 @@ def _new_document(path: str) -> DocumentModel:
         modified_at=now,
         parse_status="success",
         sensitivity="internal",
+    )
+
+
+def _new_chunk(doc_id: str, *, chunk_index: int = 0) -> ChunkModel:
+    return ChunkModel(
+        chunk_id=str(uuid.uuid4()),
+        doc_id=doc_id,
+        chunk_index=chunk_index,
+        text="chunk text",
+        char_start=0,
+        char_end=10,
     )
 
 
@@ -81,14 +97,7 @@ def test_chunk_repository_crud(engine: Engine) -> None:
         session.flush()
 
         repository = ChunkRepository(session)
-        chunk = ChunkModel(
-            chunk_id=str(uuid.uuid4()),
-            doc_id=document.doc_id,
-            chunk_index=0,
-            text="chunk text",
-            char_start=0,
-            char_end=10,
-        )
+        chunk = _new_chunk(document.doc_id)
         repository.create(chunk)
         session.commit()
 
@@ -96,11 +105,14 @@ def test_chunk_repository_crud(engine: Engine) -> None:
         assert len(chunks) == 1
         assert chunks[0].chunk_id == chunk.chunk_id
 
-        assert repository.update_text(
-            chunk.chunk_id,
-            text="updated chunk text",
-            char_end=len("updated chunk text"),
-        ) is True
+        assert (
+            repository.update_text(
+                chunk.chunk_id,
+                text="updated chunk text",
+                char_end=len("updated chunk text"),
+            )
+            is True
+        )
         session.commit()
         refreshed = repository.get_by_id(chunk.chunk_id)
         assert refreshed is not None
@@ -113,6 +125,94 @@ def test_chunk_repository_crud(engine: Engine) -> None:
         assert repository.delete(chunk.chunk_id, allow_delete=True) is True
         session.commit()
         assert repository.get_by_id(chunk.chunk_id) is None
+
+
+def test_knowledge_repository_crud(engine: Engine) -> None:
+    with Session(engine) as session:
+        document = _new_document("C:/docs/knowledge.md")
+        DocumentRepository(session).create(document)
+        chunk = _new_chunk(document.doc_id)
+        ChunkRepository(session).create(chunk)
+        session.flush()
+
+        repository = KnowledgeRepository(session)
+        knowledge = KnowledgeItemModel(
+            knowledge_id=str(uuid.uuid4()),
+            doc_id=document.doc_id,
+            chunk_id=chunk.chunk_id,
+            summary="initial summary",
+            entities_json=["OpenDocs"],
+            topics_json=["baseline"],
+            confidence=0.8,
+        )
+        repository.create(knowledge)
+        session.commit()
+
+        fetched = repository.get_by_id(knowledge.knowledge_id)
+        assert fetched is not None
+        assert fetched.summary == "initial summary"
+
+        by_doc = repository.list_by_document(document.doc_id)
+        assert len(by_doc) == 1
+        assert by_doc[0].knowledge_id == knowledge.knowledge_id
+
+        assert repository.update_summary(knowledge.knowledge_id, "updated summary", 0.9) is True
+        session.commit()
+        updated = repository.get_by_id(knowledge.knowledge_id)
+        assert updated is not None
+        assert updated.summary == "updated summary"
+        assert updated.confidence == 0.9
+
+        with pytest.raises(PermissionError, match="disabled by default"):
+            repository.delete(knowledge.knowledge_id)
+
+        assert repository.delete(knowledge.knowledge_id, allow_delete=True) is True
+        session.commit()
+        assert repository.get_by_id(knowledge.knowledge_id) is None
+
+
+def test_relation_repository_crud(engine: Engine) -> None:
+    with Session(engine) as session:
+        document = _new_document("C:/docs/relation.md")
+        DocumentRepository(session).create(document)
+        chunk = _new_chunk(document.doc_id)
+        ChunkRepository(session).create(chunk)
+        session.flush()
+
+        repository = RelationRepository(session)
+        edge = RelationEdgeModel(
+            edge_id=str(uuid.uuid4()),
+            src_type="document",
+            src_id=document.doc_id,
+            dst_type="chunk",
+            dst_id=chunk.chunk_id,
+            relation_type="derived_from",
+            weight=0.6,
+            evidence_chunk_id=chunk.chunk_id,
+        )
+        repository.create(edge)
+        session.commit()
+
+        fetched = repository.get_by_id(edge.edge_id)
+        assert fetched is not None
+        assert fetched.weight == 0.6
+
+        by_source = repository.list_by_source("document", document.doc_id)
+        assert len(by_source) == 1
+        assert by_source[0].edge_id == edge.edge_id
+
+        assert repository.update_weight(edge.edge_id, 0.95) is True
+        session.commit()
+        updated = repository.get_by_id(edge.edge_id)
+        assert updated is not None
+        assert updated.weight == 0.95
+
+        with pytest.raises(PermissionError, match="disabled by default"):
+            repository.delete(edge.edge_id)
+
+        assert repository.delete(edge.edge_id, allow_delete=True) is True
+        session.commit()
+        assert repository.get_by_id(edge.edge_id) is None
 
 
 def test_memory_repository_crud(engine: Engine) -> None:
@@ -179,9 +279,20 @@ def test_plan_repository_crud(engine: Engine) -> None:
         assert approved.status == "approved"
         assert approved.approved_at is not None
 
-        assert repository.update_status(plan.plan_id, "executed") is True
+        with pytest.raises(
+            PermissionError,
+            match="must use FileOperationService.execute_plan",
+        ):
+            repository.update_status(plan.plan_id, "executed")
+
+        service = FileOperationService(session)
+        executed, _audit = service.execute_plan(
+            plan.plan_id,
+            actor="system",
+            trace_id="trace-plan-execute",
+            simulate=True,
+        )
         session.commit()
-        executed = repository.get_by_id(plan.plan_id)
         assert executed.status == "executed"
         assert executed.executed_at is not None
 
@@ -193,7 +304,7 @@ def test_plan_repository_crud(engine: Engine) -> None:
         assert repository.get_by_id(plan.plan_id) is None
 
 
-def test_plan_repository_does_not_set_executed_at_when_not_executed(engine: Engine) -> None:
+def test_plan_repository_rejects_executed_at_override(engine: Engine) -> None:
     with Session(engine) as session:
         repository = PlanRepository(session)
         plan = FileOperationPlanModel(
@@ -208,11 +319,17 @@ def test_plan_repository_does_not_set_executed_at_when_not_executed(engine: Engi
         session.commit()
 
         candidate_executed_at = _now()
-        assert repository.update_status(
-            plan.plan_id,
-            "approved",
-            executed_at=candidate_executed_at,
-        ) is True
+        with pytest.raises(
+            ValueError,
+            match="managed only by FileOperationService.execute_plan",
+        ):
+            repository.update_status(
+                plan.plan_id,
+                "approved",
+                executed_at=candidate_executed_at,
+            )
+
+        assert repository.update_status(plan.plan_id, "approved") is True
         session.commit()
 
         refreshed = repository.get_by_id(plan.plan_id)
@@ -262,11 +379,14 @@ def test_audit_repository_query(engine: Engine) -> None:
         repository.create(log3)
         session.commit()
 
-        assert repository.update_detail(
-            log2.audit_id,
-            detail_json={"file_path": "C:/docs/b.md", "task_id": "task-1", "updated": True},
-            result="failure",
-        ) is True
+        assert (
+            repository.update_detail(
+                log2.audit_id,
+                detail_json={"file_path": "C:/docs/b.md", "task_id": "task-1", "updated": True},
+                result="failure",
+            )
+            is True
+        )
         session.commit()
         updated_log2 = repository.get_by_id(log2.audit_id)
         assert updated_log2 is not None

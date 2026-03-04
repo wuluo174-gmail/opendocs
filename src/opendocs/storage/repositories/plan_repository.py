@@ -34,14 +34,18 @@ class PlanRepository:
         approved_at: datetime | None = None,
         executed_at: datetime | None = None,
     ) -> bool:
+        if executed_at is not None:
+            raise ValueError("executed_at is managed only by FileOperationService.execute_plan")
+        if status == "executed":
+            raise PermissionError(
+                "executed status transition must use FileOperationService.execute_plan"
+            )
         plan = self.get_by_id(plan_id)
         if plan is None:
             return False
         plan.status = status
         if status == "approved":
             plan.approved_at = approved_at or datetime.now(UTC).replace(tzinfo=None)
-        if status == "executed":
-            plan.executed_at = executed_at or datetime.now(UTC).replace(tzinfo=None)
         self._session.flush()
         return True
 

@@ -34,10 +34,7 @@ def _delegate_to_python311_if_needed(argv: list[str]) -> int | None:
         py_launcher = shutil.which("py")
         if py_launcher:
             cmd = [py_launcher, "-3.11", str(Path(__file__).resolve()), *argv]
-            print(
-                "[bootstrap] locked baseline requires Python 3.11; "
-                "delegating to `py -3.11`."
-            )
+            print("[bootstrap] locked baseline requires Python 3.11; delegating to `py -3.11`.")
             return _run(cmd)
 
     print("[bootstrap] failed: locked baseline requires Python 3.11 + hnswlib.")

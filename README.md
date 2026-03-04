@@ -31,7 +31,13 @@ python scripts/bootstrap_dev.py
 如需直接执行主规范中的安装验证命令，请使用 Python 3.11：
 
 ```bash
-py -3.11 -m pip install -e .[dev]
+python3.11 -m pip install -e '.[dev]'
+```
+
+Windows PowerShell：
+
+```powershell
+py -3.11 -m pip install -e ".[dev]"
 ```
 
 ## 运行

@@ -178,8 +178,7 @@ stages:
   - pytest 空跑成功
   - python -m opendocs 可启动
   - README 写清运行方式
-  acceptance_refs:
-  - TC-019
+  acceptance_refs: []
   risk_watch_items:
   - 不要在此阶段引入与 MVP 无关的大型框架
   - 避免把后续业务规则硬塞进基础设施层

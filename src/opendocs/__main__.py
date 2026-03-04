@@ -1,4 +1,4 @@
-﻿"""Module entrypoint for `python -m opendocs`."""
+"""Module entrypoint for `python -m opendocs`."""
 
 from __future__ import annotations
 

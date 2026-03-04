@@ -6,6 +6,9 @@ __pycache__/
 .venv/
 venv/
 dist/
+!dist/
+dist/*
+!dist/.gitkeep
 build/
 .tmp/
 *.db
