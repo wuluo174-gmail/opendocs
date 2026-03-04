@@ -5,7 +5,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -58,6 +67,7 @@ class ChunkModel(Base):
     __tablename__ = "chunks"
     __table_args__ = (
         UniqueConstraint("doc_id", "chunk_index", name="uq_chunks_doc_index"),
+        CheckConstraint("char_end >= char_start", name="ck_chunks_char_range"),
     )
 
     chunk_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -138,6 +148,10 @@ class MemoryItemModel(Base):
             "status IN ('active', 'expired', 'disabled')",
             name="ck_memory_items_status",
         ),
+        CheckConstraint(
+            "ttl_days IS NULL OR ttl_days >= 0",
+            name="ck_memory_items_ttl_days_non_negative",
+        ),
         UniqueConstraint(
             "memory_type",
             "scope_type",
@@ -176,6 +190,10 @@ class FileOperationPlanModel(Base):
             "risk_level IN ('low', 'medium', 'high')",
             name="ck_file_operation_plans_risk_level",
         ),
+        CheckConstraint(
+            "item_count >= 0",
+            name="ck_file_operation_plans_item_count_non_negative",
+        ),
     )
 
     plan_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -193,6 +211,10 @@ class AuditLogModel(Base):
     __table_args__ = (
         CheckConstraint("actor IN ('user', 'system', 'model')", name="ck_audit_logs_actor"),
         CheckConstraint("result IN ('success', 'failure')", name="ck_audit_logs_result"),
+        CheckConstraint(
+            "target_type IN ('document', 'plan', 'memory', 'answer')",
+            name="ck_audit_logs_target_type",
+        ),
     )
 
     audit_id: Mapped[str] = mapped_column(String(36), primary_key=True)

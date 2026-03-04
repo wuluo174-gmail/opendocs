@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from opendocs import __version__
-from opendocs.config import default_settings_path, load_settings
+from opendocs.config import load_settings, resolve_app_root
 from opendocs.exceptions import ConfigError
 from opendocs.utils import init_logging
 
@@ -40,7 +40,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"config error: {exc}")
         return 2
 
-    log_root = default_settings_path().parent.parent / "logs"
+    app_root = resolve_app_root(args.config)
+    log_root = app_root / "logs"
     logger = init_logging(log_root)
     logger.info("OpenDocs CLI started")
     print("OpenDocs baseline started.")

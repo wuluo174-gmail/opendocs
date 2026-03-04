@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import sqlite3
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-import sqlite3
 from typing import Iterator
 
 from sqlalchemy import Engine, create_engine, event
@@ -37,6 +37,20 @@ def _list_migration_files() -> list[Path]:
 
 def _extract_version(filename: str) -> str:
     return filename.split("_", 1)[0]
+
+
+def _assert_unique_migration_versions(migration_files: list[Path]) -> None:
+    seen_versions: set[str] = set()
+    duplicate_versions: set[str] = set()
+    for migration_file in migration_files:
+        version = _extract_version(migration_file.name)
+        if version in seen_versions:
+            duplicate_versions.add(version)
+        else:
+            seen_versions.add(version)
+    if duplicate_versions:
+        duplicate_text = ", ".join(sorted(duplicate_versions))
+        raise ValueError(f"duplicate migration version prefix detected: {duplicate_text}")
 
 
 def _connect_sqlite(path: Path) -> sqlite3.Connection:
@@ -76,11 +90,13 @@ def migrate(db_path: str | Path) -> list[str]:
     """Apply pending schema SQL files in order and return applied versions."""
     resolved = _resolve_db_path(db_path)
     applied_versions: list[str] = []
+    migration_files = _list_migration_files()
+    _assert_unique_migration_versions(migration_files)
     connection = _connect_sqlite(resolved)
     try:
         connection.execute(_MIGRATION_TABLE_SQL)
         connection.commit()
-        for migration_file in _list_migration_files():
+        for migration_file in migration_files:
             version = _extract_version(migration_file.name)
             exists = connection.execute(
                 "SELECT 1 FROM schema_migrations WHERE version = ?",

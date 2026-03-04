@@ -35,6 +35,25 @@ class ChunkRepository:
         )
         return self._session.scalar(statement)
 
+    def update_text(
+        self,
+        chunk_id: str,
+        *,
+        text: str,
+        char_start: int | None = None,
+        char_end: int | None = None,
+    ) -> bool:
+        chunk = self.get_by_id(chunk_id)
+        if chunk is None:
+            return False
+        chunk.text = text
+        if char_start is not None:
+            chunk.char_start = char_start
+        if char_end is not None:
+            chunk.char_end = char_end
+        self._session.flush()
+        return True
+
     def delete(self, chunk_id: str) -> bool:
         chunk = self.get_by_id(chunk_id)
         if chunk is None:

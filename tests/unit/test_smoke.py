@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 
 def test_cli_help_smoke() -> None:
@@ -15,3 +17,75 @@ def test_cli_help_smoke() -> None:
     )
     assert completed.returncode == 0
     assert "usage: opendocs" in completed.stdout
+
+
+def test_cli_default_start_smoke(tmp_path: Path) -> None:
+    env = os.environ.copy()
+    env["APPDATA"] = str((tmp_path / "appdata").resolve())
+    completed = subprocess.run(
+        [sys.executable, "-m", "opendocs"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert completed.returncode == 0
+    assert "OpenDocs baseline started." in completed.stdout
+
+
+def test_stage_scaffold_scripts_exist() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    scripts_dir = repo_root / "scripts"
+    required = [
+        "bootstrap_dev.py",
+        "generate_fixture_corpus.py",
+        "rebuild_index.py",
+        "run_acceptance.py",
+    ]
+    for script_name in required:
+        assert (scripts_dir / script_name).exists()
+
+
+def test_cli_uses_explicit_config_root_for_logs(tmp_path: Path) -> None:
+    custom_root = tmp_path / "custom-root"
+    config_dir = custom_root / "config"
+    config_dir.mkdir(parents=True)
+    config_path = config_dir / "settings.toml"
+    config_path.write_text("", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["APPDATA"] = str((tmp_path / "appdata").resolve())
+    completed = subprocess.run(
+        [sys.executable, "-m", "opendocs", "--config", str(config_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert completed.returncode == 0
+    log_file = custom_root / "logs" / "app.log"
+    assert log_file.exists()
+    assert "OpenDocs CLI started" in log_file.read_text(encoding="utf-8")
+
+
+def test_cli_uses_non_canonical_explicit_config_root_for_logs(tmp_path: Path) -> None:
+    custom_root = tmp_path / "review-custom"
+    custom_root.mkdir(parents=True)
+    config_path = custom_root / "settings.toml"
+    config_path.write_text("", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["APPDATA"] = str((tmp_path / "appdata").resolve())
+    completed = subprocess.run(
+        [sys.executable, "-m", "opendocs", "--config", str(config_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert completed.returncode == 0
+    log_file = custom_root / "logs" / "app.log"
+    assert log_file.exists()
+    assert "OpenDocs CLI started" in log_file.read_text(encoding="utf-8")

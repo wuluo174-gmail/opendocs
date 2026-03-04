@@ -111,7 +111,7 @@ deliverable_contracts:
 stages:
 - id: S0
   name: 项目脚手架与基线
-  status: pending
+  status: completed
   depends_on: []
   objective: 创建可运行仓库、基础依赖、目录骨架、开发脚本、最小入口与 CI 基线。
   traceability:
@@ -185,7 +185,7 @@ stages:
   - 避免把后续业务规则硬塞进基础设施层
 - id: S1
   name: 领域模型与存储基线
-  status: pending
+  status: completed
   depends_on:
   - S0
   objective: 完成 SQLite 模式、ORM 模型、初始化与迁移工具、仓储层、样例数据脚本。
@@ -238,6 +238,7 @@ stages:
     - 核心存储相关测试通过
     - 失败事务不会污染主库
   test_commands:
+  - python -c "from pathlib import Path; Path('.tmp/opendocs.db').unlink(missing_ok=True)"
   - python scripts/init_db.py --db-path .tmp/opendocs.db
   - python scripts/seed_demo_data.py --db-path .tmp/opendocs.db
   - pytest tests/unit/storage -q
@@ -247,7 +248,6 @@ stages:
   - 自动化测试覆盖 CRUD 与迁移
   acceptance_refs:
   - TC-016
-  - TC-017
   risk_watch_items:
   - 不要把业务逻辑放进 UI 或脚本层
   - 注意 SQLite FTS5 与常规表同步策略

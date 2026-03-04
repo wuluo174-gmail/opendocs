@@ -1,17 +1,23 @@
 ﻿# OpenDocs
 
-OpenDocs 是本地优先、证据优先的桌面 AI 文档管理系统。本仓库当前完成 S0（项目脚手架与基线）。
+OpenDocs 是本地优先、证据优先的桌面 AI 文档管理系统。本仓库当前完成 S1（领域模型与存储基线）。
 
 ## 安装
 
 要求：
-- Python 3.11 或 3.12（CI 固定 3.11）
+- Python 3.11（锁定基线）
 - pip
 
 安装开发依赖：
 
 ```bash
 python scripts/bootstrap_dev.py
+```
+
+如需直接执行主规范中的安装验证命令，请使用 Python 3.11：
+
+```bash
+py -3.11 -m pip install -e .[dev]
 ```
 
 ## 运行
@@ -87,3 +93,5 @@ opendocs/
 1. `pytest` 提示找不到 Qt 绑定：重新执行 `python scripts/bootstrap_dev.py`。
 2. 配置文件缺失：默认会使用内置配置；如需自定义，可设置 `OPENDOCS_CONFIG` 指向 TOML 文件。
 3. 日志位置：默认在用户数据目录下的 `logs/app.log`。
+4. 凭据管理：按阶段计划，keyring 集成在 S10 实现，S0/S1 不提供 Provider 密钥管理接口。
+5. 若当前 `python` 不是 3.11：`bootstrap_dev.py` 会在 Windows 上尝试委托给 `py -3.11`；若本机没有可用 3.11，则脚本会失败并提示先安装 Python 3.11。

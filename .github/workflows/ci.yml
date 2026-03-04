@@ -22,5 +22,11 @@ jobs:
       - name: CLI smoke
         run: python -m opendocs --help
 
+      - name: CLI default start smoke
+        run: python -m opendocs
+
+      - name: Ruff lint
+        run: ruff check .
+
       - name: Run tests
         run: pytest -q

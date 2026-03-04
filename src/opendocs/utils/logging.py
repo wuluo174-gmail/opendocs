@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
 import re
 import traceback
-
+from datetime import UTC, datetime
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 _ASSIGNMENT_PATTERN = re.compile(
     r"""(?ix)
@@ -15,9 +16,13 @@ _ASSIGNMENT_PATTERN = re.compile(
     (?P<key>api[_-]?key|token|password|secret)
     (?P=key_quote)
     \s*(?P<separator>[:=])\s*
-    (?P<value_quote>["']?)
-    (?P<value>[^\s,;}'"]+)
-    (?P=value_quote)
+    (?:
+        (?P<quoted_value_quote>["'])
+        (?P<quoted_value>.*?)
+        (?P=quoted_value_quote)
+      |
+        (?P<unquoted_value>[^\s]+)
+    )
     """
 )
 _BEARER_PATTERN = re.compile(r"(?i)\bbearer\s+[a-z0-9\-._~+/=]+")
@@ -28,7 +33,7 @@ def _replace_assignment(match: re.Match[str]) -> str:
     key_quote = match.group("key_quote") or ""
     key = match.group("key")
     separator = match.group("separator")
-    value_quote = match.group("value_quote") or ""
+    value_quote = match.group("quoted_value_quote") or ""
     return f"{key_quote}{key}{key_quote}{separator}{value_quote}[REDACTED]{value_quote}"
 
 
@@ -58,6 +63,25 @@ class RedactFilter(logging.Filter):
         return True
 
 
+class JsonFormatter(logging.Formatter):
+    """Format log records as single-line JSON objects."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, object] = {
+            "timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        elif record.exc_text:
+            payload["exception"] = record.exc_text
+
+        return json.dumps(payload, ensure_ascii=False)
+
+
 def init_logging(log_dir: str | Path) -> logging.Logger:
     path = Path(log_dir)
     path.mkdir(parents=True, exist_ok=True)
@@ -74,10 +98,7 @@ def init_logging(log_dir: str | Path) -> logging.Logger:
         backupCount=5,
         encoding="utf-8",
     )
-    formatter = logging.Formatter(
-        "%(asctime)s %(levelname)s %(name)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    formatter = JsonFormatter()
     file_handler.setFormatter(formatter)
     file_handler.addFilter(RedactFilter())
     logger.addHandler(file_handler)

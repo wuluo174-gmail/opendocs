@@ -22,11 +22,36 @@ class AuditRepository:
     def get_by_id(self, audit_id: str) -> AuditLogModel | None:
         return self._session.get(AuditLogModel, audit_id)
 
+    def update_detail(
+        self,
+        audit_id: str,
+        *,
+        detail_json: dict[str, object],
+        result: str | None = None,
+    ) -> bool:
+        audit_log = self.get_by_id(audit_id)
+        if audit_log is None:
+            return False
+        audit_log.detail_json = detail_json
+        if result is not None:
+            audit_log.result = result
+        self._session.flush()
+        return True
+
+    def delete(self, audit_id: str) -> bool:
+        audit_log = self.get_by_id(audit_id)
+        if audit_log is None:
+            return False
+        self._session.delete(audit_log)
+        self._session.flush()
+        return True
+
     def query(
         self,
         *,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
+        task_id: str | None = None,
         trace_id: str | None = None,
         file_path: str | None = None,
         target_type: str | None = None,
@@ -37,6 +62,10 @@ class AuditRepository:
             statement = statement.where(AuditLogModel.timestamp >= start_time)
         if end_time is not None:
             statement = statement.where(AuditLogModel.timestamp <= end_time)
+        if task_id is not None:
+            statement = statement.where(
+                func.json_extract(AuditLogModel.detail_json, "$.task_id") == task_id
+            )
         if trace_id is not None:
             statement = statement.where(AuditLogModel.trace_id == trace_id)
         if target_type is not None:

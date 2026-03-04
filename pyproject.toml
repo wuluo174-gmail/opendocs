@@ -7,11 +7,12 @@ name = "opendocs"
 version = "0.1.0"
 description = "OpenDocs local-first desktop AI document manager baseline."
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.12"
 authors = [{ name = "OpenDocs Team" }]
 dependencies = [
   "pydantic>=2.7,<3.0",
   "SQLAlchemy>=2.0,<3.0",
+  "keyring>=25.0,<26.0",
 ]
 
 [project.optional-dependencies]
@@ -21,6 +22,15 @@ dev = [
   "pytest-cov>=5.0,<6.0",
   "PySide6>=6.8,<7.0",
   "ruff>=0.5,<1.0",
+]
+stack = [
+  "watchdog>=4.0,<5.0",
+  "hnswlib>=0.8,<0.9",
+  "python-docx>=1.1,<2.0",
+  "PyMuPDF>=1.24,<2.0",
+  "pypdf>=4.3,<6.0",
+  "Jinja2>=3.1,<4.0",
+  "pyinstaller>=6.0,<7.0",
 ]
 
 [project.scripts]

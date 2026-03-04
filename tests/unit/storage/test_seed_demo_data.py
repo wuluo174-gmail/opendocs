@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import importlib.util
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-import uuid
 
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
-from opendocs.domain.models import AuditLogModel, ChunkModel, DocumentModel, FileOperationPlanModel, MemoryItemModel
+from opendocs.domain.models import (
+    AuditLogModel,
+    ChunkModel,
+    DocumentModel,
+    FileOperationPlanModel,
+    MemoryItemModel,
+)
 from opendocs.storage.db import build_sqlite_engine, init_db
 
 _SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "seed_demo_data.py"
@@ -56,8 +62,11 @@ def test_seed_demo_data_inserts_records(db_path: Path) -> None:
         }
         with Session(engine) as session:
             chunk = session.scalar(select(ChunkModel))
+            document = session.scalar(select(DocumentModel))
             assert chunk is not None
+            assert document is not None
             assert chunk.char_end <= len(chunk.text)
+            assert Path(document.path).is_relative_to(db_path.parent.resolve())
     finally:
         engine.dispose()
 
@@ -75,20 +84,30 @@ def test_seed_demo_data_is_idempotent(db_path: Path) -> None:
     }
 
 
+def test_seed_demo_data_creates_demo_document_when_missing(db_path: Path) -> None:
+    demo_doc_path, _, _ = _SEED_MODULE.resolve_seed_paths(db_path)
+    demo_doc = Path(demo_doc_path)
+    assert not demo_doc.exists()
+    seed_demo_data(db_path)
+    assert demo_doc.exists()
+    assert "Project Overview" in demo_doc.read_text(encoding="utf-8")
+
+
 def test_seed_demo_data_handles_existing_business_keys(db_path: Path) -> None:
     init_db(db_path)
     engine = build_sqlite_engine(db_path)
     now = datetime.now(UTC).replace(tzinfo=None)
+    demo_doc_path, demo_doc_relative_path, _ = _SEED_MODULE.resolve_seed_paths(db_path)
     try:
         with Session(engine) as session:
             existing_doc_id = str(uuid.uuid4())
             session.add(
                 DocumentModel(
                     doc_id=existing_doc_id,
-                    path=_SEED_MODULE.DEMO_DOC_PATH,
-                    relative_path=_SEED_MODULE.DEMO_DOC_RELATIVE_PATH,
+                    path=demo_doc_path,
+                    relative_path=demo_doc_relative_path,
                     source_root_id=str(uuid.uuid4()),
-                    source_path=_SEED_MODULE.DEMO_DOC_PATH,
+                    source_path=demo_doc_path,
                     hash_sha256="d" * 64,
                     title="Existing Doc",
                     file_type="md",
