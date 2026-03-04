@@ -127,6 +127,10 @@ class KnowledgeItemModel(Base):
         ),
         CheckConstraint(_uuid_check_sql("doc_id"), name="ck_knowledge_items_doc_id_uuid"),
         CheckConstraint(_uuid_check_sql("chunk_id"), name="ck_knowledge_items_chunk_id_uuid"),
+        CheckConstraint(
+            "confidence >= 0.0 AND confidence <= 1.0",
+            name="ck_knowledge_items_confidence_range",
+        ),
     )
 
     knowledge_id: Mapped[str] = mapped_column(String(36), primary_key=True)

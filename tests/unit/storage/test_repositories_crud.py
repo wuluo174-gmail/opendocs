@@ -256,6 +256,77 @@ def test_memory_repository_crud(engine: Engine) -> None:
         assert repository.get_by_id(memory.memory_id) is None
 
 
+def test_memory_list_active_by_scope(engine: Engine) -> None:
+    with Session(engine) as session:
+        repository = MemoryRepository(session)
+        scope_id = "task-list-scope"
+
+        active_m1 = MemoryItemModel(
+            memory_id=str(uuid.uuid4()),
+            memory_type="M1",
+            scope_type="task",
+            scope_id=scope_id,
+            key="goal",
+            content="finish report",
+            importance=0.8,
+            status="active",
+            updated_at=_now(),
+        )
+        active_m2 = MemoryItemModel(
+            memory_id=str(uuid.uuid4()),
+            memory_type="M2",
+            scope_type="task",
+            scope_id=scope_id,
+            key="style",
+            content="concise",
+            importance=0.5,
+            status="active",
+            updated_at=_now(),
+        )
+        expired_m1 = MemoryItemModel(
+            memory_id=str(uuid.uuid4()),
+            memory_type="M1",
+            scope_type="task",
+            scope_id=scope_id,
+            key="old_note",
+            content="stale",
+            importance=0.3,
+            status="expired",
+            updated_at=_now(),
+        )
+        other_scope = MemoryItemModel(
+            memory_id=str(uuid.uuid4()),
+            memory_type="M1",
+            scope_type="task",
+            scope_id="other-scope",
+            key="unrelated",
+            content="noise",
+            importance=1.0,
+            status="active",
+            updated_at=_now(),
+        )
+        for item in [active_m1, active_m2, expired_m1, other_scope]:
+            repository.create(item)
+        session.commit()
+
+        # All active items for the scope, ordered by importance desc
+        results = repository.list_active_by_scope(scope_type="task", scope_id=scope_id)
+        result_ids = [r.memory_id for r in results]
+        assert len(results) == 2
+        assert active_m1.memory_id in result_ids
+        assert active_m2.memory_id in result_ids
+        assert expired_m1.memory_id not in result_ids
+        assert other_scope.memory_id not in result_ids
+        assert results[0].importance >= results[1].importance
+
+        # Filter by memory_type
+        m1_only = repository.list_active_by_scope(
+            scope_type="task", scope_id=scope_id, memory_type="M1"
+        )
+        assert len(m1_only) == 1
+        assert m1_only[0].memory_id == active_m1.memory_id
+
+
 def test_plan_repository_crud(engine: Engine) -> None:
     with Session(engine) as session:
         repository = PlanRepository(session)

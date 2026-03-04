@@ -38,6 +38,23 @@ class MemoryRepository:
         )
         return self._session.scalar(statement)
 
+    def list_active_by_scope(
+        self,
+        *,
+        scope_type: str,
+        scope_id: str,
+        memory_type: str | None = None,
+    ) -> list[MemoryItemModel]:
+        statement = select(MemoryItemModel).where(
+            MemoryItemModel.scope_type == scope_type,
+            MemoryItemModel.scope_id == scope_id,
+            MemoryItemModel.status == "active",
+        )
+        if memory_type is not None:
+            statement = statement.where(MemoryItemModel.memory_type == memory_type)
+        statement = statement.order_by(MemoryItemModel.importance.desc())
+        return list(self._session.scalars(statement))
+
     def update_status(self, memory_id: str, status: str) -> bool:
         memory_item = self.get_by_id(memory_id)
         if memory_item is None:

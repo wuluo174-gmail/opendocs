@@ -38,7 +38,7 @@ def test_init_db_creates_core_tables(db_path: Path) -> None:
 def test_migrate_is_idempotent(db_path: Path) -> None:
     first_applied = migrate(db_path)
     second_applied = migrate(db_path)
-    assert first_applied == ["0001", "0002", "0003", "0004", "0005"]
+    assert first_applied == ["0001", "0002", "0003", "0004", "0005", "0006"]
     assert second_applied == []
 
 
@@ -52,7 +52,7 @@ def test_migration_version_recorded(db_path: Path) -> None:
                 "SELECT version FROM schema_migrations ORDER BY version"
             ).fetchall()
         }
-        assert versions == {"0001", "0002", "0003", "0004", "0005"}
+        assert versions == {"0001", "0002", "0003", "0004", "0005", "0006"}
     finally:
         connection.close()
 
@@ -211,7 +211,7 @@ def test_migration_backfills_audit_target_type_guardrail_for_legacy_tables(db_pa
         connection.close()
 
     applied = migrate(db_path)
-    assert applied == ["0002", "0003", "0004", "0005"]
+    assert applied == ["0002", "0003", "0004", "0005", "0006"]
 
     verify_connection = sqlite3.connect(db_path)
     try:
