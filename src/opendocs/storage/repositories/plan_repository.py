@@ -45,7 +45,11 @@ class PlanRepository:
         self._session.flush()
         return True
 
-    def delete(self, plan_id: str) -> bool:
+    def delete(self, plan_id: str, *, allow_delete: bool = False) -> bool:
+        if not allow_delete:
+            raise PermissionError(
+                "delete is disabled by default; pass allow_delete=True explicitly"
+            )
         plan = self.get_by_id(plan_id)
         if plan is None:
             return False

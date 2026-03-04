@@ -63,7 +63,16 @@ def test_install_locked_dependencies_uses_lock_then_editable_no_deps(
     assert exit_code == 0
     assert commands == [
         [sys.executable, "-m", "pip", "install", "-r", str(lock_path)],
-        [sys.executable, "-m", "pip", "install", "-e", str(project_root), "--no-deps"],
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            str(project_root),
+            "--no-deps",
+            "--no-build-isolation",
+        ],
         [sys.executable, "-c", "import hnswlib"],
     ]
 

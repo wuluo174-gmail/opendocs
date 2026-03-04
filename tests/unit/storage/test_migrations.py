@@ -38,7 +38,7 @@ def test_init_db_creates_core_tables(db_path: Path) -> None:
 def test_migrate_is_idempotent(db_path: Path) -> None:
     first_applied = migrate(db_path)
     second_applied = migrate(db_path)
-    assert first_applied == ["0001", "0002", "0003"]
+    assert first_applied == ["0001", "0002", "0003", "0004"]
     assert second_applied == []
 
 
@@ -52,7 +52,7 @@ def test_migration_version_recorded(db_path: Path) -> None:
                 "SELECT version FROM schema_migrations ORDER BY version"
             ).fetchall()
         }
-        assert versions == {"0001", "0002", "0003"}
+        assert versions == {"0001", "0002", "0003", "0004"}
     finally:
         connection.close()
 
@@ -83,6 +83,98 @@ def test_migration_enforces_audit_target_type_constraint(db_path: Path) -> None:
             )
     finally:
         connection.close()
+
+
+def test_migration_backfills_audit_target_type_guardrail_for_legacy_tables(db_path: Path) -> None:
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            """
+            CREATE TABLE schema_migrations (
+                version TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                applied_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO schema_migrations(version, filename, applied_at)
+            VALUES ('0001', '0001_initial.sql', '2026-03-03T00:00:00Z')
+            """
+        )
+        # Simulate a legacy schema where these tables exist but audit target_type CHECK is missing.
+        connection.execute(
+            """
+            CREATE TABLE chunks (
+                chunk_id TEXT PRIMARY KEY,
+                char_start INTEGER NOT NULL,
+                char_end INTEGER NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE memory_items (
+                memory_id TEXT PRIMARY KEY,
+                ttl_days INTEGER
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE file_operation_plans (
+                plan_id TEXT PRIMARY KEY,
+                item_count INTEGER NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE audit_logs (
+                audit_id TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                actor TEXT NOT NULL CHECK (actor IN ('user', 'system', 'model')),
+                operation TEXT NOT NULL,
+                target_type TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                result TEXT NOT NULL CHECK (result IN ('success', 'failure')),
+                detail_json TEXT NOT NULL DEFAULT '{}',
+                trace_id TEXT NOT NULL
+            )
+            """
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    applied = migrate(db_path)
+    assert applied == ["0002", "0003", "0004"]
+
+    verify_connection = sqlite3.connect(db_path)
+    try:
+        with pytest.raises(sqlite3.IntegrityError):
+            verify_connection.execute(
+                """
+                INSERT INTO audit_logs (
+                    audit_id, timestamp, actor, operation, target_type,
+                    target_id, result, detail_json, trace_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "audit-legacy-invalid",
+                    "2026-03-03T00:00:00Z",
+                    "system",
+                    "index",
+                    "chunk",
+                    "chunk-1",
+                    "success",
+                    "{}",
+                    "trace-invalid",
+                ),
+            )
+    finally:
+        verify_connection.close()
 
 
 def test_migration_enforces_relation_type_constraint(db_path: Path) -> None:

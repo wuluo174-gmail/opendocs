@@ -38,7 +38,11 @@ class AuditRepository:
         self._session.flush()
         return True
 
-    def delete(self, audit_id: str) -> bool:
+    def delete(self, audit_id: str, *, allow_delete: bool = False) -> bool:
+        if not allow_delete:
+            raise PermissionError(
+                "delete is disabled by default; pass allow_delete=True explicitly"
+            )
         audit_log = self.get_by_id(audit_id)
         if audit_log is None:
             return False

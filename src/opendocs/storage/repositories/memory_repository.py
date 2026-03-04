@@ -47,7 +47,11 @@ class MemoryRepository:
         self._session.flush()
         return True
 
-    def delete(self, memory_id: str) -> bool:
+    def delete(self, memory_id: str, *, allow_delete: bool = False) -> bool:
+        if not allow_delete:
+            raise PermissionError(
+                "delete is disabled by default; pass allow_delete=True explicitly"
+            )
         memory_item = self.get_by_id(memory_id)
         if memory_item is None:
             return False

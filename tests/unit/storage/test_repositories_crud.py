@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
@@ -64,7 +65,10 @@ def test_document_repository_crud(engine: Engine) -> None:
         assert updated is True
         assert repository.get_by_id(document.doc_id).title == "Updated Title"
 
-        deleted = repository.delete(document.doc_id)
+        with pytest.raises(PermissionError, match="disabled by default"):
+            repository.delete(document.doc_id)
+
+        deleted = repository.delete(document.doc_id, allow_delete=True)
         session.commit()
         assert deleted is True
         assert repository.get_by_id(document.doc_id) is None
@@ -103,7 +107,10 @@ def test_chunk_repository_crud(engine: Engine) -> None:
         assert refreshed.text == "updated chunk text"
         assert refreshed.char_end == len("updated chunk text")
 
-        assert repository.delete(chunk.chunk_id) is True
+        with pytest.raises(PermissionError, match="disabled by default"):
+            repository.delete(chunk.chunk_id)
+
+        assert repository.delete(chunk.chunk_id, allow_delete=True) is True
         session.commit()
         assert repository.get_by_id(chunk.chunk_id) is None
 
@@ -141,7 +148,10 @@ def test_memory_repository_crud(engine: Engine) -> None:
         assert updated.status == "disabled"
         assert updated.updated_at > previous_updated_at
 
-        assert repository.delete(memory.memory_id) is True
+        with pytest.raises(PermissionError, match="disabled by default"):
+            repository.delete(memory.memory_id)
+
+        assert repository.delete(memory.memory_id, allow_delete=True) is True
         session.commit()
         assert repository.get_by_id(memory.memory_id) is None
 
@@ -175,7 +185,10 @@ def test_plan_repository_crud(engine: Engine) -> None:
         assert executed.status == "executed"
         assert executed.executed_at is not None
 
-        assert repository.delete(plan.plan_id) is True
+        with pytest.raises(PermissionError, match="disabled by default"):
+            repository.delete(plan.plan_id)
+
+        assert repository.delete(plan.plan_id, allow_delete=True) is True
         session.commit()
         assert repository.get_by_id(plan.plan_id) is None
 
@@ -280,6 +293,9 @@ def test_audit_repository_query(engine: Engine) -> None:
         assert len(by_time) == 1
         assert by_time[0].audit_id == log2.audit_id
 
-        assert repository.delete(log3.audit_id) is True
+        with pytest.raises(PermissionError, match="disabled by default"):
+            repository.delete(log3.audit_id)
+
+        assert repository.delete(log3.audit_id, allow_delete=True) is True
         session.commit()
         assert repository.get_by_id(log3.audit_id) is None

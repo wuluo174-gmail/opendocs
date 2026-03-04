@@ -54,7 +54,11 @@ class ChunkRepository:
         self._session.flush()
         return True
 
-    def delete(self, chunk_id: str) -> bool:
+    def delete(self, chunk_id: str, *, allow_delete: bool = False) -> bool:
+        if not allow_delete:
+            raise PermissionError(
+                "delete is disabled by default; pass allow_delete=True explicitly"
+            )
         chunk = self.get_by_id(chunk_id)
         if chunk is None:
             return False

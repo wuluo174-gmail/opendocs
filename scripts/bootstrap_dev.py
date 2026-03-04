@@ -68,6 +68,7 @@ def _install_locked_dependencies() -> int:
         "-e",
         str(project_root),
         "--no-deps",
+        "--no-build-isolation",
     ]
     if _run(install_editable_cmd) != 0:
         print(f"[bootstrap] failed: {' '.join(install_editable_cmd)}")

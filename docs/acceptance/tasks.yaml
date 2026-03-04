@@ -170,9 +170,9 @@ stages:
     - 至少有一个自动化 smoke test
     - CI 能在无业务代码状态下完成安装与测试
   test_commands:
-  - python scripts/bootstrap_dev.py
-  - python -m opendocs --help
-  - pytest -q
+  - ./.venv/bin/python scripts/bootstrap_dev.py
+  - ./.venv/bin/python -m opendocs --help
+  - ./.venv/bin/pytest -q
   exit_criteria:
   - 本地可安装依赖
   - pytest 空跑成功
@@ -238,16 +238,15 @@ stages:
     - 核心存储相关测试通过
     - 失败事务不会污染主库
   test_commands:
-  - python -c "from pathlib import Path; Path('.tmp/opendocs.db').unlink(missing_ok=True)"
-  - python scripts/init_db.py --db-path .tmp/opendocs.db
-  - python scripts/seed_demo_data.py --db-path .tmp/opendocs.db
-  - pytest tests/unit/storage -q
+  - ./.venv/bin/python -c "from pathlib import Path; Path('.tmp/opendocs.db').unlink(missing_ok=True)"
+  - ./.venv/bin/python scripts/init_db.py --db-path .tmp/opendocs.db
+  - ./.venv/bin/python scripts/seed_demo_data.py --db-path .tmp/opendocs.db
+  - ./.venv/bin/pytest tests/unit/storage -q
   exit_criteria:
   - 可初始化数据库
   - 可写入 / 查询核心实体
   - 自动化测试覆盖 CRUD 与迁移
-  acceptance_refs:
-  - TC-016
+  acceptance_refs: []
   risk_watch_items:
   - 不要把业务逻辑放进 UI 或脚本层
   - 注意 SQLite FTS5 与常规表同步策略

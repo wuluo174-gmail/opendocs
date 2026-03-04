@@ -19,17 +19,19 @@
   - 显式配置路径时日志落到对应根目录。
 
 ## 3. 运行命令
-- `python scripts/bootstrap_dev.py`
-- `python -m opendocs --help`
-- `pytest -q`
-- `python -m opendocs`
+- `./.venv/bin/python scripts/bootstrap_dev.py`
+- `./.venv/bin/python -m opendocs --help`
+- `./.venv/bin/pytest -q`
+- `./.venv/bin/python -m opendocs`
+- `./.venv/bin/ruff check .`
 
 ## 4. 测试结果
 - 通过：
-  - `python scripts/bootstrap_dev.py`（在 Windows 下会自动委托到 `py -3.11`，并按锁文件安装后校验 `hnswlib`）
-  - `python -m opendocs --help`
-  - `pytest -q`（45 passed）
-  - `python -m opendocs`
+  - `./.venv/bin/python scripts/bootstrap_dev.py`（按锁文件安装并校验 `hnswlib`）
+  - `./.venv/bin/python -m opendocs --help`
+  - `./.venv/bin/pytest -q`
+  - `./.venv/bin/python -m opendocs`
+  - `./.venv/bin/ruff check .`
 - 失败：
   - 无
 - 覆盖范围：
@@ -53,3 +55,9 @@
 - `bootstrap_dev.py` 的 editable 安装目标改为仓库绝对路径（不再依赖当前工作目录必须是仓库根目录）。
 - 修正 CLI 的配置根目录推导：显式 `--config` 为非 `config/settings.toml` 布局时，日志落在该配置文件同级根目录的 `logs/`。
 - 修正 Python 基线口径漂移：`pyproject.toml` 收敛为 `>=3.11,<3.12`，`requirements.lock` 头注释去除“3.12 compatible”描述，并补充对应单测防回归。
+- 补充 README 的虚拟环境激活与显式路径命令，降低“系统无 `python` 别名”导致的复验失败风险。
+- 修正 `test_cli_default_start_smoke`：使用临时 `OPENDOCS_CONFIG`，避免 macOS/Linux 回落到真实用户目录。
+- `requirements.lock` 从“仅直接依赖”改为“直接 + 传递依赖全量锁定”，提升长期可重复安装稳定性。
+- `bootstrap_dev.py` 的 editable 安装增加 `--no-build-isolation`，确保离线/受限网络下不因构建隔离拉取依赖而失败。
+- 修复 CI `ruff` 门禁失败：仓储层 5 个 `delete` 方法中的长字符串改为多行表达，消除 `E501`。
+- S0/S1 的 `tasks.yaml` 阶段命令切换为 `.venv` 解释器与 `pytest` 路径，避免环境缺少 `python` 别名导致复验失败。

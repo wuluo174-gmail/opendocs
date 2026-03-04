@@ -20,8 +20,14 @@ def test_cli_help_smoke() -> None:
 
 
 def test_cli_default_start_smoke(tmp_path: Path) -> None:
+    app_root = tmp_path / "OpenDocs"
+    config_dir = app_root / "config"
+    config_dir.mkdir(parents=True)
+    config_path = config_dir / "settings.toml"
+    config_path.write_text("", encoding="utf-8")
+
     env = os.environ.copy()
-    env["APPDATA"] = str((tmp_path / "appdata").resolve())
+    env["OPENDOCS_CONFIG"] = str(config_path.resolve())
     completed = subprocess.run(
         [sys.executable, "-m", "opendocs"],
         check=False,
@@ -31,6 +37,9 @@ def test_cli_default_start_smoke(tmp_path: Path) -> None:
     )
     assert completed.returncode == 0
     assert "OpenDocs baseline started." in completed.stdout
+    log_file = app_root / "logs" / "app.log"
+    assert log_file.exists()
+    assert "OpenDocs CLI started" in log_file.read_text(encoding="utf-8")
 
 
 def test_stage_scaffold_scripts_exist() -> None:

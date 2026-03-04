@@ -36,7 +36,11 @@ class DocumentRepository:
         self._session.flush()
         return True
 
-    def delete(self, doc_id: str) -> bool:
+    def delete(self, doc_id: str, *, allow_delete: bool = False) -> bool:
+        if not allow_delete:
+            raise PermissionError(
+                "delete is disabled by default; pass allow_delete=True explicitly"
+            )
         document = self.get_by_id(doc_id)
         if document is None:
             return False
