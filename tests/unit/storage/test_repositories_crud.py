@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import Engine
@@ -19,6 +19,7 @@ from opendocs.domain.models import (
     MemoryItemModel,
     RelationEdgeModel,
 )
+from opendocs.exceptions import DeleteNotAllowedError, PlanNotApprovedError
 from opendocs.storage.repositories import (
     AuditRepository,
     ChunkRepository,
@@ -28,10 +29,11 @@ from opendocs.storage.repositories import (
     PlanRepository,
     RelationRepository,
 )
+from opendocs.utils.time import utcnow_naive
 
 
 def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+    return utcnow_naive()
 
 
 def _new_document(path: str) -> DocumentModel:
@@ -81,13 +83,71 @@ def test_document_repository_crud(engine: Engine) -> None:
         assert updated is True
         assert repository.get_by_id(document.doc_id).title == "Updated Title"
 
-        with pytest.raises(PermissionError, match="disabled by default"):
+        with pytest.raises(DeleteNotAllowedError, match="disabled by default"):
             repository.delete(document.doc_id)
 
         deleted = repository.delete(document.doc_id, allow_delete=True)
         session.commit()
         assert deleted is True
         assert repository.get_by_id(document.doc_id) is None
+
+
+def test_document_update_title_preserves_modified_at(engine: Engine) -> None:
+    """update_title must NOT change modified_at — it is file-system mtime (§8.1.1)."""
+    with Session(engine) as session:
+        repository = DocumentRepository(session)
+        document = _new_document("C:/docs/refresh-modified.md")
+        repository.create(document)
+        session.commit()
+
+        original_modified_at = repository.get_by_id(document.doc_id).modified_at
+
+        repository.update_title(document.doc_id, "New Title")
+        session.commit()
+
+        updated = repository.get_by_id(document.doc_id)
+        assert updated.title == "New Title"
+        assert updated.modified_at == original_modified_at
+
+
+def test_document_update_indexed_at(engine: Engine) -> None:
+    """update_indexed_at sets indexed_at but NOT modified_at (§8.1.1)."""
+    with Session(engine) as session:
+        repository = DocumentRepository(session)
+        document = _new_document("C:/docs/indexed.md")
+        repository.create(document)
+        session.commit()
+
+        original_modified_at = repository.get_by_id(document.doc_id).modified_at
+
+        assert repository.update_indexed_at(document.doc_id) is True
+        session.commit()
+
+        refreshed = repository.get_by_id(document.doc_id)
+        assert refreshed.indexed_at is not None
+        assert refreshed.modified_at == original_modified_at
+
+        assert repository.update_indexed_at("nonexistent-id") is False
+
+
+def test_document_mark_deleted_from_fs(engine: Engine) -> None:
+    """mark_deleted_from_fs must toggle is_deleted_from_fs flag."""
+    with Session(engine) as session:
+        repository = DocumentRepository(session)
+        document = _new_document("C:/docs/mark_del.md")
+        repository.create(document)
+        session.commit()
+        assert repository.get_by_id(document.doc_id).is_deleted_from_fs is False
+
+        assert repository.mark_deleted_from_fs(document.doc_id) is True
+        session.commit()
+        assert repository.get_by_id(document.doc_id).is_deleted_from_fs is True
+
+        assert repository.mark_deleted_from_fs(document.doc_id, deleted=False) is True
+        session.commit()
+        assert repository.get_by_id(document.doc_id).is_deleted_from_fs is False
+
+        assert repository.mark_deleted_from_fs("nonexistent-id") is False
 
 
 def test_chunk_repository_crud(engine: Engine) -> None:
@@ -119,12 +179,35 @@ def test_chunk_repository_crud(engine: Engine) -> None:
         assert refreshed.text == "updated chunk text"
         assert refreshed.char_end == len("updated chunk text")
 
-        with pytest.raises(PermissionError, match="disabled by default"):
+        with pytest.raises(DeleteNotAllowedError, match="disabled by default"):
             repository.delete(chunk.chunk_id)
 
         assert repository.delete(chunk.chunk_id, allow_delete=True) is True
         session.commit()
         assert repository.get_by_id(chunk.chunk_id) is None
+
+
+def test_chunk_delete_by_doc_id(engine: Engine) -> None:
+    """delete_by_doc_id must remove all chunks for a document."""
+    with Session(engine) as session:
+        document = _new_document("C:/docs/chunk_batch_del.md")
+        DocumentRepository(session).create(document)
+        session.flush()
+
+        repository = ChunkRepository(session)
+        for i in range(3):
+            repository.create(_new_chunk(document.doc_id, chunk_index=i))
+        session.commit()
+
+        assert len(repository.list_by_document(document.doc_id)) == 3
+
+        with pytest.raises(DeleteNotAllowedError, match="disabled by default"):
+            repository.delete_by_doc_id(document.doc_id)
+
+        count = repository.delete_by_doc_id(document.doc_id, allow_delete=True)
+        session.commit()
+        assert count == 3
+        assert len(repository.list_by_document(document.doc_id)) == 0
 
 
 def test_knowledge_repository_crud(engine: Engine) -> None:
@@ -163,7 +246,7 @@ def test_knowledge_repository_crud(engine: Engine) -> None:
         assert updated.summary == "updated summary"
         assert updated.confidence == 0.9
 
-        with pytest.raises(PermissionError, match="disabled by default"):
+        with pytest.raises(DeleteNotAllowedError, match="disabled by default"):
             repository.delete(knowledge.knowledge_id)
 
         assert repository.delete(knowledge.knowledge_id, allow_delete=True) is True
@@ -207,7 +290,7 @@ def test_relation_repository_crud(engine: Engine) -> None:
         assert updated is not None
         assert updated.weight == 0.95
 
-        with pytest.raises(PermissionError, match="disabled by default"):
+        with pytest.raises(DeleteNotAllowedError, match="disabled by default"):
             repository.delete(edge.edge_id)
 
         assert repository.delete(edge.edge_id, allow_delete=True) is True
@@ -248,7 +331,7 @@ def test_memory_repository_crud(engine: Engine) -> None:
         assert updated.status == "disabled"
         assert updated.updated_at > previous_updated_at
 
-        with pytest.raises(PermissionError, match="disabled by default"):
+        with pytest.raises(DeleteNotAllowedError, match="disabled by default"):
             repository.delete(memory.memory_id)
 
         assert repository.delete(memory.memory_id, allow_delete=True) is True
@@ -351,7 +434,7 @@ def test_plan_repository_crud(engine: Engine) -> None:
         assert approved.approved_at is not None
 
         with pytest.raises(
-            PermissionError,
+            PlanNotApprovedError,
             match="must use FileOperationService.execute_plan",
         ):
             repository.update_status(plan.plan_id, "executed")
@@ -361,13 +444,12 @@ def test_plan_repository_crud(engine: Engine) -> None:
             plan.plan_id,
             actor="system",
             trace_id="trace-plan-execute",
-            simulate=True,
         )
         session.commit()
         assert executed.status == "executed"
         assert executed.executed_at is not None
 
-        with pytest.raises(PermissionError, match="disabled by default"):
+        with pytest.raises(DeleteNotAllowedError, match="disabled by default"):
             repository.delete(plan.plan_id)
 
         assert repository.delete(plan.plan_id, allow_delete=True) is True
@@ -484,9 +566,191 @@ def test_audit_repository_query(engine: Engine) -> None:
         assert len(by_time) == 1
         assert by_time[0].audit_id == log2.audit_id
 
-        with pytest.raises(PermissionError, match="disabled by default"):
+        with pytest.raises(DeleteNotAllowedError, match="disabled by default"):
             repository.delete(log3.audit_id)
 
         assert repository.delete(log3.audit_id, allow_delete=True) is True
         session.commit()
         assert repository.get_by_id(log3.audit_id) is None
+
+
+def test_audit_query_returns_all_without_limit(engine: Engine) -> None:
+    """query(limit=None) must return all audit logs without truncation."""
+    with Session(engine) as session:
+        repository = AuditRepository(session)
+        for i in range(5):
+            repository.create(
+                AuditLogModel(
+                    audit_id=str(uuid.uuid4()),
+                    actor="system",
+                    operation="test_op",
+                    target_type="plan",
+                    target_id=f"plan-{i}",
+                    result="success",
+                    detail_json={},
+                    trace_id=f"trace-nolimit-{i}",
+                )
+            )
+        session.commit()
+
+        all_logs = repository.query(limit=None)
+        assert len(all_logs) == 5
+
+        limited = repository.query(limit=2)
+        assert len(limited) == 2
+
+
+def test_document_list_all_returns_all_without_limit(engine: Engine) -> None:
+    """list_all() with no limit must return all documents, not just 100."""
+    with Session(engine) as session:
+        repository = DocumentRepository(session)
+        paths = [f"C:/docs/list_all_{i:03d}.md" for i in range(5)]
+        for path in paths:
+            repository.create(_new_document(path))
+        session.commit()
+
+        all_docs = repository.list_all()
+        assert len(all_docs) == 5
+
+        limited = repository.list_all(limit=2)
+        assert len(limited) == 2
+
+
+def test_document_get_by_path(engine: Engine) -> None:
+    """get_by_path must locate a document by its unique path."""
+    with Session(engine) as session:
+        repository = DocumentRepository(session)
+        doc = _new_document("C:/docs/by_path_test.md")
+        repository.create(doc)
+        session.commit()
+
+        found = repository.get_by_path("C:/docs/by_path_test.md")
+        assert found is not None
+        assert found.doc_id == doc.doc_id
+
+        missing = repository.get_by_path("C:/docs/nonexistent.md")
+        assert missing is None
+
+
+def test_cascade_delete_removes_chunks_and_knowledge(engine: Engine) -> None:
+    """Deleting a document must cascade-delete its chunks and knowledge items."""
+    with Session(engine) as session:
+        doc = _new_document("C:/docs/cascade.md")
+        DocumentRepository(session).create(doc)
+        session.flush()
+
+        chunk = _new_chunk(doc.doc_id, chunk_index=0)
+        ChunkRepository(session).create(chunk)
+        session.flush()
+
+        ki = KnowledgeItemModel(
+            knowledge_id=str(uuid.uuid4()),
+            doc_id=doc.doc_id,
+            chunk_id=chunk.chunk_id,
+            summary="test",
+            confidence=0.5,
+        )
+        KnowledgeRepository(session).create(ki)
+        session.commit()
+
+        chunk_id = chunk.chunk_id
+        ki_id = ki.knowledge_id
+
+        assert ChunkRepository(session).get_by_id(chunk_id) is not None
+        assert KnowledgeRepository(session).get_by_id(ki_id) is not None
+
+        DocumentRepository(session).delete(doc.doc_id, allow_delete=True)
+        session.commit()
+
+    # Use a fresh session to avoid SQLAlchemy identity map caching
+    with Session(engine) as session2:
+        assert ChunkRepository(session2).get_by_id(chunk_id) is None
+        assert KnowledgeRepository(session2).get_by_id(ki_id) is None
+
+
+def test_cascade_delete_nullifies_relation_edge_evidence(engine: Engine) -> None:
+    """Deleting a chunk must SET NULL the evidence_chunk_id on relation edges."""
+    with Session(engine) as session:
+        doc = _new_document("C:/docs/cascade_rel.md")
+        DocumentRepository(session).create(doc)
+        session.flush()
+
+        chunk = _new_chunk(doc.doc_id, chunk_index=0)
+        ChunkRepository(session).create(chunk)
+        session.flush()
+
+        edge = RelationEdgeModel(
+            edge_id=str(uuid.uuid4()),
+            src_type="document",
+            src_id=doc.doc_id,
+            dst_type="document",
+            dst_id=str(uuid.uuid4()),
+            relation_type="related_to",
+            weight=1.0,
+            evidence_chunk_id=chunk.chunk_id,
+        )
+        RelationRepository(session).create(edge)
+        session.commit()
+
+        assert RelationRepository(session).get_by_id(edge.edge_id).evidence_chunk_id is not None
+
+        ChunkRepository(session).delete(chunk.chunk_id, allow_delete=True)
+        session.commit()
+
+        refreshed = RelationRepository(session).get_by_id(edge.edge_id)
+        assert refreshed is not None
+        assert refreshed.evidence_chunk_id is None
+
+
+def test_memory_scope_key_unique_constraint(engine: Engine) -> None:
+    """Duplicate (memory_type, scope_type, scope_id, key) must be rejected."""
+    with Session(engine) as session:
+        repository = MemoryRepository(session)
+        base = dict(
+            memory_type="M1",
+            scope_type="task",
+            scope_id="task-dup",
+            key="status",
+            content="in progress",
+            importance=0.5,
+            status="active",
+        )
+        repository.create(MemoryItemModel(memory_id=str(uuid.uuid4()), **base))
+        session.commit()
+
+        from sqlalchemy.exc import IntegrityError
+
+        with pytest.raises(IntegrityError):
+            repository.create(
+                MemoryItemModel(
+                    memory_id=str(uuid.uuid4()),
+                    **{**base, "content": "duplicate"},
+                )
+            )
+
+
+def test_memory_repository_rejects_m0_persistence(engine: Engine) -> None:
+    with Session(engine) as session:
+        repository = MemoryRepository(session)
+        m0_item = MemoryItemModel(
+            memory_id=str(uuid.uuid4()),
+            memory_type="M0",
+            scope_type="session",
+            scope_id="session-001",
+            key="intent",
+            content="find report",
+            importance=0.5,
+            status="active",
+            updated_at=_now(),
+        )
+        from opendocs.exceptions import StorageError
+
+        with pytest.raises(StorageError, match="M0 session memory must not be persisted"):
+            repository.create(m0_item)
+        session.rollback()
+        from sqlalchemy import select as _select
+
+        all_m0 = session.scalars(
+            _select(MemoryItemModel).where(MemoryItemModel.memory_type == "M0")
+        ).all()
+        assert all_m0 == []

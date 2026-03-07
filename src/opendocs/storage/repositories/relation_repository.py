@@ -6,6 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opendocs.domain.models import RelationEdgeModel
+from opendocs.exceptions import DeleteNotAllowedError
+from opendocs.utils.time import utcnow_naive
 
 
 class RelationRepository:
@@ -32,12 +34,13 @@ class RelationRepository:
         if relation_edge is None:
             return False
         relation_edge.weight = weight
+        relation_edge.updated_at = utcnow_naive()
         self._session.flush()
         return True
 
     def delete(self, edge_id: str, *, allow_delete: bool = False) -> bool:
         if not allow_delete:
-            raise PermissionError(
+            raise DeleteNotAllowedError(
                 "delete is disabled by default; pass allow_delete=True explicitly"
             )
         relation_edge = self.get_by_id(edge_id)

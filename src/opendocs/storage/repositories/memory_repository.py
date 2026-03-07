@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opendocs.domain.models import MemoryItemModel
+from opendocs.exceptions import DeleteNotAllowedError, StorageError
+from opendocs.utils.time import utcnow_naive
 
 
 class MemoryRepository:
@@ -15,6 +15,10 @@ class MemoryRepository:
         self._session = session
 
     def create(self, memory_item: MemoryItemModel) -> MemoryItemModel:
+        # TODO(S8): This M0 business rule belongs in MemoryService, not the repository layer.
+        # Move to src/opendocs/app/memory_service.py when S8 is implemented.
+        if memory_item.memory_type == "M0":
+            raise StorageError("M0 session memory must not be persisted; store it in-process only")
         self._session.add(memory_item)
         self._session.flush()
         return memory_item
@@ -60,13 +64,13 @@ class MemoryRepository:
         if memory_item is None:
             return False
         memory_item.status = status
-        memory_item.updated_at = datetime.now(UTC).replace(tzinfo=None)
+        memory_item.updated_at = utcnow_naive()
         self._session.flush()
         return True
 
     def delete(self, memory_id: str, *, allow_delete: bool = False) -> bool:
         if not allow_delete:
-            raise PermissionError(
+            raise DeleteNotAllowedError(
                 "delete is disabled by default; pass allow_delete=True explicitly"
             )
         memory_item = self.get_by_id(memory_id)

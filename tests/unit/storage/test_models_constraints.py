@@ -132,6 +132,36 @@ def test_audit_target_type_check_constraint(session: Session) -> None:
         session.commit()
 
 
+def test_relation_edge_src_type_check_constraint(session: Session) -> None:
+    relation = RelationEdgeModel(
+        edge_id=str(uuid.uuid4()),
+        src_type="invalid_type",
+        src_id="doc-1",
+        dst_type="document",
+        dst_id="doc-2",
+        relation_type="related_to",
+        weight=1.0,
+    )
+    session.add(relation)
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def test_relation_edge_dst_type_check_constraint(session: Session) -> None:
+    relation = RelationEdgeModel(
+        edge_id=str(uuid.uuid4()),
+        src_type="document",
+        src_id="doc-1",
+        dst_type="invalid_type",
+        dst_id="doc-2",
+        relation_type="related_to",
+        weight=1.0,
+    )
+    session.add(relation)
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
 def test_relation_edge_relation_type_check_constraint(session: Session) -> None:
     relation = RelationEdgeModel(
         edge_id=str(uuid.uuid4()),
@@ -207,6 +237,106 @@ def test_memory_ttl_days_must_be_non_negative(session: Session) -> None:
         ttl_days=-1,
     )
     session.add(memory)
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def test_document_size_bytes_must_be_non_negative(session: Session) -> None:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    document = DocumentModel(
+        doc_id=str(uuid.uuid4()),
+        path="C:/demo/negative-size.md",
+        relative_path="negative-size.md",
+        source_root_id=str(uuid.uuid4()),
+        source_path="C:/demo/negative-size.md",
+        hash_sha256="a" * 64,
+        title="negative size",
+        file_type="md",
+        size_bytes=-1,
+        created_at=now,
+        modified_at=now,
+        parse_status="success",
+        sensitivity="internal",
+    )
+    session.add(document)
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def test_memory_importance_must_be_in_range(session: Session) -> None:
+    memory = MemoryItemModel(
+        memory_id=str(uuid.uuid4()),
+        memory_type="M1",
+        scope_type="task",
+        scope_id="task-1",
+        key="oob-importance",
+        content="test",
+        importance=1.5,
+        status="active",
+    )
+    session.add(memory)
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def test_relation_edge_weight_must_be_non_negative(session: Session) -> None:
+    relation = RelationEdgeModel(
+        edge_id=str(uuid.uuid4()),
+        src_type="document",
+        src_id="doc-1",
+        dst_type="document",
+        dst_id="doc-2",
+        relation_type="related_to",
+        weight=-0.5,
+    )
+    session.add(relation)
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def test_audit_trace_id_must_be_non_empty(session: Session) -> None:
+    audit = AuditLogModel(
+        audit_id=str(uuid.uuid4()),
+        actor="system",
+        operation="index",
+        target_type="document",
+        target_id="doc-1",
+        result="success",
+        trace_id="",
+    )
+    session.add(audit)
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def test_chunk_index_must_be_non_negative(session: Session) -> None:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    document = DocumentModel(
+        doc_id=str(uuid.uuid4()),
+        path="C:/demo/chunk-neg-idx.md",
+        relative_path="chunk-neg-idx.md",
+        source_root_id=str(uuid.uuid4()),
+        source_path="C:/demo/chunk-neg-idx.md",
+        hash_sha256="c" * 64,
+        title="chunk neg index",
+        file_type="md",
+        size_bytes=10,
+        created_at=now,
+        modified_at=now,
+        parse_status="success",
+        sensitivity="internal",
+    )
+    session.add(document)
+    session.flush()
+    chunk = ChunkModel(
+        chunk_id=str(uuid.uuid4()),
+        doc_id=document.doc_id,
+        chunk_index=-1,
+        text="demo",
+        char_start=0,
+        char_end=4,
+    )
+    session.add(chunk)
     with pytest.raises(IntegrityError):
         session.commit()
 

@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Iterator
 
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session
+
+from opendocs.utils.time import utcnow_naive
+
+# Shared PRAGMA settings applied to both raw sqlite3 and SQLAlchemy connections.
+_SQLITE_PRAGMAS: tuple[str, ...] = (
+    "PRAGMA foreign_keys = ON",
+    "PRAGMA journal_mode = WAL",
+    "PRAGMA busy_timeout = 5000",
+)
 
 _MIGRATION_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -55,7 +63,8 @@ def _assert_unique_migration_versions(migration_files: list[Path]) -> None:
 
 def _connect_sqlite(path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(path)
-    connection.execute("PRAGMA foreign_keys = ON")
+    for pragma in _SQLITE_PRAGMAS:
+        connection.execute(pragma)
     return connection
 
 
@@ -70,7 +79,8 @@ def _apply_migration_atomically(
     filename: str,
     migration_sql: str,
 ) -> None:
-    applied_at = datetime.now(UTC).isoformat()
+    # ADR-0003: use "YYYY-MM-DD HH:MM:SS" (no ISO 8601 'T') for SQLite consistency.
+    applied_at = utcnow_naive().strftime("%Y-%m-%d %H:%M:%S")
     script = (
         "BEGIN IMMEDIATE;\n"
         f"{migration_sql}\n"
@@ -79,6 +89,11 @@ def _apply_migration_atomically(
         "COMMIT;\n"
     )
     try:
+        # executescript() issues an implicit COMMIT before executing the script,
+        # closing any open transaction. This is safe here because we explicitly
+        # BEGIN IMMEDIATE in the script itself, so the migration runs atomically.
+        # The implicit COMMIT only affects any prior auto-started transaction
+        # from the schema_migrations SELECT, which is read-only and idempotent.
         connection.executescript(script)
     except Exception:
         if connection.in_transaction:
@@ -133,7 +148,8 @@ def build_sqlite_engine(db_path: str | Path) -> Engine:
     @event.listens_for(engine, "connect")
     def _enable_foreign_keys(dbapi_connection: sqlite3.Connection, _: object) -> None:
         cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys = ON")
+        for pragma in _SQLITE_PRAGMAS:
+            cursor.execute(pragma)
         cursor.close()
 
     return engine

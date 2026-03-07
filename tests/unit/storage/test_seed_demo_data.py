@@ -15,7 +15,9 @@ from opendocs.domain.models import (
     ChunkModel,
     DocumentModel,
     FileOperationPlanModel,
+    KnowledgeItemModel,
     MemoryItemModel,
+    RelationEdgeModel,
 )
 from opendocs.storage.db import build_sqlite_engine, init_db
 
@@ -33,6 +35,8 @@ def _count_all(engine: Engine) -> dict[str, int]:
         return {
             "documents": session.scalar(select(func.count()).select_from(DocumentModel)),
             "chunks": session.scalar(select(func.count()).select_from(ChunkModel)),
+            "knowledge_items": session.scalar(select(func.count()).select_from(KnowledgeItemModel)),
+            "relation_edges": session.scalar(select(func.count()).select_from(RelationEdgeModel)),
             "memory_items": session.scalar(select(func.count()).select_from(MemoryItemModel)),
             "file_operation_plans": session.scalar(
                 select(func.count()).select_from(FileOperationPlanModel)
@@ -46,6 +50,8 @@ def test_seed_demo_data_inserts_records(db_path: Path) -> None:
     assert inserted == {
         "documents": 1,
         "chunks": 1,
+        "knowledge_items": 1,
+        "relation_edges": 1,
         "memory_items": 1,
         "file_operation_plans": 1,
         "audit_logs": 1,
@@ -56,6 +62,8 @@ def test_seed_demo_data_inserts_records(db_path: Path) -> None:
         assert _count_all(engine) == {
             "documents": 1,
             "chunks": 1,
+            "knowledge_items": 1,
+            "relation_edges": 1,
             "memory_items": 1,
             "file_operation_plans": 1,
             "audit_logs": 1,
@@ -78,6 +86,8 @@ def test_seed_demo_data_is_idempotent(db_path: Path) -> None:
     assert second == {
         "documents": 0,
         "chunks": 0,
+        "knowledge_items": 0,
+        "relation_edges": 0,
         "memory_items": 0,
         "file_operation_plans": 0,
         "audit_logs": 0,

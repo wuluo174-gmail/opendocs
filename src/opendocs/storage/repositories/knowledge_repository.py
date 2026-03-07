@@ -6,6 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opendocs.domain.models import KnowledgeItemModel
+from opendocs.exceptions import DeleteNotAllowedError
+from opendocs.utils.time import utcnow_naive
 
 
 class KnowledgeRepository:
@@ -30,12 +32,13 @@ class KnowledgeRepository:
             return False
         knowledge_item.summary = summary
         knowledge_item.confidence = confidence
+        knowledge_item.updated_at = utcnow_naive()
         self._session.flush()
         return True
 
     def delete(self, knowledge_id: str, *, allow_delete: bool = False) -> bool:
         if not allow_delete:
-            raise PermissionError(
+            raise DeleteNotAllowedError(
                 "delete is disabled by default; pass allow_delete=True explicitly"
             )
         knowledge_item = self.get_by_id(knowledge_id)

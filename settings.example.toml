@@ -1,4 +1,10 @@
-﻿[app]
+# OpenDocs 配置示例（复制为 config/settings.toml 并按需修改）
+# 默认配置路径：
+#   Windows : %APPDATA%/OpenDocs/config/settings.toml
+#   macOS   : ~/Library/Application Support/OpenDocs/config/settings.toml
+#   Linux   : ~/.local/share/OpenDocs/config/settings.toml
+
+[app]
 language = "zh-CN"
 output_dir = "OpenDocs_Output"
 local_only = true

@@ -119,7 +119,7 @@ opendocs/
 ## 常见问题
 
 1. `pytest` 提示找不到 Qt 绑定：重新执行 `python scripts/bootstrap_dev.py`。
-2. 配置文件缺失：默认会使用内置配置；如需自定义，可设置 `OPENDOCS_CONFIG` 指向 TOML 文件。
+2. 配置文件缺失：默认会使用内置配置；如需自定义，将仓库根目录的 `settings.example.toml` 复制到运行目录的 `config/settings.toml`（macOS 默认为 `~/Library/Application Support/OpenDocs/config/settings.toml`，Linux 为 `~/.local/share/OpenDocs/config/settings.toml`，Windows 为 `%APPDATA%/OpenDocs/config/settings.toml`），或设置 `OPENDOCS_CONFIG` 环境变量指向 TOML 文件。
 3. 日志位置：默认在用户数据目录下的 `logs/app.log`。
 4. 凭据管理：按阶段计划，keyring 集成在 S10 实现，S0/S1 不提供 Provider 密钥管理接口。
 5. 若当前 `python` 不是 3.11：`bootstrap_dev.py` 会在 Windows 上尝试委托给 `py -3.11`；若本机没有可用 3.11，则脚本会失败并提示先安装 Python 3.11。

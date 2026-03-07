@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from opendocs.domain.models import (
@@ -12,21 +13,28 @@ from opendocs.domain.models import (
     ChunkModel,
     DocumentModel,
     FileOperationPlanModel,
+    KnowledgeItemModel,
     MemoryItemModel,
+    RelationEdgeModel,
 )
 from opendocs.storage.db import build_sqlite_engine, init_db, session_scope
 from opendocs.storage.repositories import (
     AuditRepository,
     ChunkRepository,
     DocumentRepository,
+    KnowledgeRepository,
     MemoryRepository,
     PlanRepository,
+    RelationRepository,
 )
+from opendocs.utils.time import utcnow_naive
 
 DOC_ID = "00000000-0000-0000-0000-000000000101"
 CHUNK_ID = "00000000-0000-0000-0000-000000000201"
 MEMORY_ID = "00000000-0000-0000-0000-000000000301"
 PLAN_ID = "00000000-0000-0000-0000-000000000401"
+KNOWLEDGE_ID = "00000000-0000-0000-0000-000000000601"
+RELATION_EDGE_ID = "00000000-0000-0000-0000-000000000701"
 AUDIT_ID = "00000000-0000-0000-0000-000000000501"
 DEMO_CHUNK_INDEX = 0
 DEMO_MEMORY_SCOPE_ID = "demo-task"
@@ -34,7 +42,7 @@ DEMO_MEMORY_KEY = "owner"
 
 
 def _now() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+    return utcnow_naive()
 
 
 def _preferred_or_new_id(preferred_id: str, exists: bool) -> str:
@@ -71,6 +79,8 @@ def seed_demo_data(db_path: str | Path) -> dict[str, int]:
     inserted = {
         "documents": 0,
         "chunks": 0,
+        "knowledge_items": 0,
+        "relation_edges": 0,
         "memory_items": 0,
         "file_operation_plans": 0,
         "audit_logs": 0,
@@ -98,7 +108,7 @@ def seed_demo_data(db_path: str | Path) -> dict[str, int]:
                         relative_path=demo_doc_relative_path,
                         source_root_id="00000000-0000-0000-0000-000000000001",
                         source_path=demo_doc_path,
-                        hash_sha256="c" * 64,
+                        hash_sha256=hashlib.sha256(Path(demo_doc_path).read_bytes()).hexdigest(),
                         title="Project Overview",
                         file_type="md",
                         size_bytes=2048,
@@ -147,6 +157,38 @@ def seed_demo_data(db_path: str | Path) -> dict[str, int]:
 
             if chunk is None:
                 raise RuntimeError("failed to resolve demo chunk")
+
+            knowledge_repo = KnowledgeRepository(session)
+            relation_repo = RelationRepository(session)
+
+            if knowledge_repo.get_by_id(KNOWLEDGE_ID) is None:
+                knowledge_repo.create(
+                    KnowledgeItemModel(
+                        knowledge_id=KNOWLEDGE_ID,
+                        doc_id=document.doc_id,
+                        chunk_id=chunk.chunk_id,
+                        summary="OpenDocs is a local-first AI document management system.",
+                        entities_json=["OpenDocs"],
+                        topics_json=["document-management", "local-first"],
+                        confidence=0.9,
+                    )
+                )
+                inserted["knowledge_items"] += 1
+
+            if relation_repo.get_by_id(RELATION_EDGE_ID) is None:
+                relation_repo.create(
+                    RelationEdgeModel(
+                        edge_id=RELATION_EDGE_ID,
+                        src_type="document",
+                        src_id=document.doc_id,
+                        dst_type="chunk",
+                        dst_id=chunk.chunk_id,
+                        relation_type="mentions",
+                        weight=1.0,
+                        evidence_chunk_id=chunk.chunk_id,
+                    )
+                )
+                inserted["relation_edges"] += 1
 
             memory = memory_repo.get_by_scope_key(
                 memory_type="M1",

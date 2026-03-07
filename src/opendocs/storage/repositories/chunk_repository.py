@@ -6,6 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opendocs.domain.models import ChunkModel
+from opendocs.exceptions import DeleteNotAllowedError
+from opendocs.utils.time import utcnow_naive
 
 
 class ChunkRepository:
@@ -51,12 +53,25 @@ class ChunkRepository:
             chunk.char_start = char_start
         if char_end is not None:
             chunk.char_end = char_end
+        chunk.updated_at = utcnow_naive()
         self._session.flush()
         return True
 
+    def delete_by_doc_id(self, doc_id: str, *, allow_delete: bool = False) -> int:
+        """Delete all chunks belonging to a document. Returns count of deleted rows."""
+        if not allow_delete:
+            raise DeleteNotAllowedError(
+                "delete is disabled by default; pass allow_delete=True explicitly"
+            )
+        chunks = self.list_by_document(doc_id)
+        for chunk in chunks:
+            self._session.delete(chunk)
+        self._session.flush()
+        return len(chunks)
+
     def delete(self, chunk_id: str, *, allow_delete: bool = False) -> bool:
         if not allow_delete:
-            raise PermissionError(
+            raise DeleteNotAllowedError(
                 "delete is disabled by default; pass allow_delete=True explicitly"
             )
         chunk = self.get_by_id(chunk_id)

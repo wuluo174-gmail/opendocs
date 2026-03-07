@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -18,13 +19,29 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import JSON
 
+from opendocs.utils.time import utcnow_naive
+
+# Recommended operation values for AuditLogModel.operation (spec §8.1.7).
+# S1 subset only — extend in later stages (e.g. summarize, rollback,
+# provider_call, memory_read) as the corresponding features are built.
+AUDIT_OPERATIONS = frozenset(
+    {
+        "move_execute",
+        "rename_execute",
+        "create_execute",
+        "document_parse",
+        "document_index",
+        "chunk_create",
+        "knowledge_extract",
+        "memory_write",
+        "search_query",
+        "answer_generate",
+    }
+)
+
 
 class Base(DeclarativeBase):
     """Base class for all ORM models."""
-
-
-def _utcnow_naive() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _uuid_check_sql(column: str) -> str:
@@ -68,10 +85,11 @@ class DocumentModel(Base):
             name="ck_documents_source_root_id_uuid",
         ),
         CheckConstraint(_sha256_check_sql("hash_sha256"), name="ck_documents_hash_sha256"),
+        CheckConstraint("size_bytes >= 0", name="ck_documents_size_bytes_non_negative"),
     )
 
     doc_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    path: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
+    path: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     relative_path: Mapped[str] = mapped_column(Text, nullable=False)
     source_root_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     source_path: Mapped[str] = mapped_column(Text, nullable=False)
@@ -79,8 +97,11 @@ class DocumentModel(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     file_type: Mapped[str] = mapped_column(String(16), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    modified_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # NOTE(S3): Spec §8.1.1 defines created_at/modified_at as *file-system* times.
+    # The default=utcnow_naive is only a fallback; S3 scanner MUST explicitly set
+    # these to os.path.getctime() / os.path.getmtime() from the actual file.
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+    modified_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
     indexed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     parse_status: Mapped[str] = mapped_column(String(16), nullable=False, default="success")
     category: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -93,6 +114,7 @@ class ChunkModel(Base):
     __tablename__ = "chunks"
     __table_args__ = (
         UniqueConstraint("doc_id", "chunk_index", name="uq_chunks_doc_index"),
+        CheckConstraint("chunk_index >= 0", name="ck_chunks_chunk_index_non_negative"),
         CheckConstraint("char_end >= char_start", name="ck_chunks_char_range"),
         CheckConstraint(_uuid_check_sql("chunk_id"), name="ck_chunks_chunk_id_uuid"),
         CheckConstraint(_uuid_check_sql("doc_id"), name="ck_chunks_doc_id_uuid"),
@@ -116,6 +138,8 @@ class ChunkModel(Base):
     token_estimate: Mapped[int | None] = mapped_column(Integer, nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(Text, nullable=True)
     embedding_key: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
 
 
 class KnowledgeItemModel(Base):
@@ -150,20 +174,33 @@ class KnowledgeItemModel(Base):
     entities_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     topics_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
 
 
 class RelationEdgeModel(Base):
     __tablename__ = "relation_edges"
     __table_args__ = (
         CheckConstraint(
+            "src_type IN ('document', 'chunk', 'knowledge', 'memory', 'entity', 'topic')",
+            name="ck_relation_edges_src_type",
+        ),
+        CheckConstraint(
+            "dst_type IN ('document', 'chunk', 'knowledge', 'memory', 'entity', 'topic')",
+            name="ck_relation_edges_dst_type",
+        ),
+        CheckConstraint(
             "relation_type IN ('related_to', 'mentions', 'derived_from', 'same_project')",
             name="ck_relation_edges_relation_type",
         ),
+        CheckConstraint("weight >= 0.0", name="ck_relation_edges_weight_non_negative"),
         CheckConstraint(_uuid_check_sql("edge_id"), name="ck_relation_edges_edge_id_uuid"),
         CheckConstraint(
             "evidence_chunk_id IS NULL OR " + _uuid_check_sql("evidence_chunk_id"),
             name="ck_relation_edges_evidence_chunk_id_uuid",
         ),
+        Index("idx_relation_edges_src", "src_type", "src_id"),
+        Index("idx_relation_edges_dst", "dst_type", "dst_id"),
     )
 
     edge_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -179,6 +216,8 @@ class RelationEdgeModel(Base):
         nullable=True,
         index=True,
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
 
 
 class MemoryItemModel(Base):
@@ -192,6 +231,10 @@ class MemoryItemModel(Base):
         CheckConstraint(
             "status IN ('active', 'expired', 'disabled')",
             name="ck_memory_items_status",
+        ),
+        CheckConstraint(
+            "importance >= 0.0 AND importance <= 1.0",
+            name="ck_memory_items_importance_range",
         ),
         CheckConstraint(
             "ttl_days IS NULL OR ttl_days >= 0",
@@ -218,7 +261,8 @@ class MemoryItemModel(Base):
     ttl_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     confirmed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow_naive)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
 
 
 class FileOperationPlanModel(Base):
@@ -249,6 +293,7 @@ class FileOperationPlanModel(Base):
     item_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     risk_level: Mapped[str] = mapped_column(String(16), nullable=False, default="low")
     preview_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     executed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -259,23 +304,28 @@ class AuditLogModel(Base):
         CheckConstraint("actor IN ('user', 'system', 'model')", name="ck_audit_logs_actor"),
         CheckConstraint("result IN ('success', 'failure')", name="ck_audit_logs_result"),
         CheckConstraint(
-            "target_type IN ('document', 'plan', 'memory', 'answer')",
+            "target_type IN ("
+            "'document', 'plan', 'memory', 'answer', "
+            "'source', 'search', 'provider_call', "
+            "'generation', 'index_run', 'rollback')",
             name="ck_audit_logs_target_type",
         ),
         CheckConstraint(_uuid_check_sql("audit_id"), name="ck_audit_logs_audit_id_uuid"),
+        CheckConstraint("length(trace_id) > 0", name="ck_audit_logs_trace_id_non_empty"),
+        Index("idx_audit_logs_target", "target_type", "target_id"),
     )
 
     audit_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=_utcnow_naive,
+        default=utcnow_naive,
         index=True,
     )
     actor: Mapped[str] = mapped_column(String(16), nullable=False)
     operation: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    target_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    target_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_id: Mapped[str] = mapped_column(Text, nullable=False)
     result: Mapped[str] = mapped_column(String(16), nullable=False)
     detail_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     trace_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
