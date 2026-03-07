@@ -1,1 +1,29 @@
-"""OpenDocs package module."""
+"""OpenDocs parsers – unified document parsing."""
+
+from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument, ParserRegistry
+from opendocs.parsers.docx_parser import DocxParser
+from opendocs.parsers.md_parser import MdParser
+from opendocs.parsers.pdf_parser import PdfParser
+from opendocs.parsers.txt_parser import TxtParser
+
+__all__ = [
+    "BaseParser",
+    "Paragraph",
+    "ParsedDocument",
+    "ParserRegistry",
+    "TxtParser",
+    "MdParser",
+    "DocxParser",
+    "PdfParser",
+    "create_default_registry",
+]
+
+
+def create_default_registry() -> ParserRegistry:
+    """Create a registry with all built-in parsers registered."""
+    registry = ParserRegistry()
+    registry.register(TxtParser())
+    registry.register(MdParser())
+    registry.register(DocxParser())
+    registry.register(PdfParser())
+    return registry
