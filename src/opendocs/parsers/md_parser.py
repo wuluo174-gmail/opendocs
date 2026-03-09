@@ -5,9 +5,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from opendocs.parsers._encoding import read_text_with_fallback
 from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_FRONTMATTER_SEP = re.compile(r"^-{3,}\s*$")
+_SETEXT_H1_RE = re.compile(r"^={1,}\s*$")
+_SETEXT_H2_RE = re.compile(r"^-{1,}\s*$")
+_TRAILING_HASHES_RE = re.compile(r"\s+#+\s*$")
 
 
 class MdParser(BaseParser):
@@ -17,51 +23,98 @@ class MdParser(BaseParser):
         return [".md"]
 
     def parse(self, file_path: Path) -> ParsedDocument:
-        text = file_path.read_text(encoding="utf-8", errors="replace")
+        text = read_text_with_fallback(file_path)
 
-        paragraphs: list[Paragraph] = []
         title: str | None = None
 
         # Heading stack: list of (level, title_text)
         heading_stack: list[tuple[int, str]] = []
         current_heading_path: str | None = None
 
-        # Accumulator for paragraph text between headings / blank lines
+        # First pass: collect (text, heading_path) entries
+        entries: list[tuple[str, str | None]] = []
         buf_lines: list[str] = []
-        buf_start: int | None = None
-        offset = 0  # character offset into text
-        idx = 0
+        in_fence = False
+        fence_marker = ""
+        fence_open_len = 0
 
         def _flush() -> None:
-            nonlocal idx
             if not buf_lines:
                 return
             joined = "\n".join(buf_lines).strip()
             if not joined:
                 return
-            assert buf_start is not None
-            paragraphs.append(
-                Paragraph(
-                    text=joined,
-                    index=idx,
-                    start_char=buf_start,
-                    end_char=buf_start + len("\n".join(buf_lines).rstrip()),
-                    heading_path=current_heading_path,
-                )
-            )
-            idx += 1
+            entries.append((joined, current_heading_path))
 
         lines = text.split("\n")
-        for line in lines:
+
+        # Skip YAML frontmatter (--- ... ---)
+        line_start = 0
+        if lines and _FRONTMATTER_SEP.match(lines[0]):
+            for i in range(1, len(lines)):
+                if _FRONTMATTER_SEP.match(lines[i]):
+                    line_start = i + 1
+                    break
+
+        for line in lines[line_start:]:
+            # Track fenced code blocks so we don't treat `# comment` as headings
+            fence_match = _FENCE_RE.match(line)
+            if fence_match:
+                marker_char = fence_match.group(1)[0]
+                marker_len = len(fence_match.group(1))
+                if not in_fence:
+                    in_fence = True
+                    fence_marker = marker_char
+                    fence_open_len = marker_len
+                    buf_lines.append(line)
+                    continue
+                elif marker_char == fence_marker and marker_len >= fence_open_len:
+                    # CommonMark: closing fence must be >= opening fence length
+                    in_fence = False
+                    fence_marker = ""
+                    fence_open_len = 0
+                    buf_lines.append(line)
+                    continue
+
+            if in_fence:
+                buf_lines.append(line)
+                continue
+
+            # Setext-style heading: previous buffer has exactly one non-empty
+            # line and current line is === or ---
+            setext_level = 0
+            if (
+                len(buf_lines) == 1
+                and buf_lines[0].strip()
+                and not in_fence
+            ):
+                if _SETEXT_H1_RE.match(line):
+                    setext_level = 1
+                elif _SETEXT_H2_RE.match(line):
+                    setext_level = 2
+
+            if setext_level:
+                heading_text = buf_lines[0].strip()
+                buf_lines.clear()
+
+                if title is None and setext_level == 1:
+                    title = heading_text
+
+                while heading_stack and heading_stack[-1][0] >= setext_level:
+                    heading_stack.pop()
+                heading_stack.append((setext_level, heading_text))
+                current_heading_path = " > ".join(h[1] for h in heading_stack)
+                entries.append((heading_text, current_heading_path))
+                continue
+
             m = _HEADING_RE.match(line)
             if m:
                 # Flush previous paragraph
                 _flush()
                 buf_lines.clear()
-                buf_start = None
 
                 level = len(m.group(1))
-                heading_text = m.group(2).strip()
+                heading_text = _TRAILING_HASHES_RE.sub("", m.group(2)).strip()
 
                 # Set title to first H1
                 if title is None and level == 1:
@@ -74,46 +127,55 @@ class MdParser(BaseParser):
 
                 current_heading_path = " > ".join(h[1] for h in heading_stack)
 
-                # The heading line itself becomes a paragraph
-                paragraphs.append(
-                    Paragraph(
-                        text=line.strip(),
-                        index=idx,
-                        start_char=offset,
-                        end_char=offset + len(line),
-                        heading_path=current_heading_path,
-                    )
-                )
-                idx += 1
+                # Design choice: heading text is emitted as an independent
+                # paragraph.  This may produce very short entries that the
+                # chunker merges into adjacent chunks.  Because the heading
+                # itself is the boundary point for heading_path changes, it
+                # may sometimes form a standalone chunk.  Accepted trade-off:
+                # keeps heading_path transitions clean and avoids mixing
+                # heading text with the body paragraph that follows.
+                entries.append((heading_text, current_heading_path))
 
             elif line.strip() == "":
                 # Blank line: flush current buffer
                 _flush()
                 buf_lines.clear()
-                buf_start = None
             else:
-                if buf_start is None:
-                    buf_start = offset
                 buf_lines.append(line)
-
-            # Advance offset (account for the \n we split on)
-            offset += len(line) + 1  # +1 for the newline
 
         # Flush remaining
         _flush()
 
-        # If no H1 title, use first non-empty line
+        # If no H1 title, use first non-empty entry
         if title is None:
-            for line in lines:
-                s = line.strip()
+            for entry_text, _ in entries:
+                s = entry_text.strip()
                 if s:
                     title = s
                     break
 
+        # Second pass: build raw_text and compute offsets cumulatively
+        raw_text = "\n".join(e[0] for e in entries)
+        paragraphs: list[Paragraph] = []
+        offset = 0
+        for idx, (entry_text, heading_path) in enumerate(entries):
+            start = offset
+            end = offset + len(entry_text)
+            paragraphs.append(
+                Paragraph(
+                    text=entry_text,
+                    index=idx,
+                    start_char=start,
+                    end_char=end,
+                    heading_path=heading_path,
+                )
+            )
+            offset = end + 1  # +1 for the \n separator
+
         return ParsedDocument(
             file_path=str(file_path),
             file_type="md",
-            raw_text=text,
+            raw_text=raw_text,
             title=title,
             paragraphs=paragraphs,
         )

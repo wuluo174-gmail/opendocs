@@ -12,9 +12,15 @@ authors = [{ name = "OpenDocs Team" }]
 dependencies = [
   "pydantic>=2.7,<3.0",
   "SQLAlchemy>=2.0,<3.0",
-  "keyring>=25.0,<26.0",
+  "charset-normalizer>=3.3,<4.0",
+  "python-docx>=1.1,<2.0",
+  "PyMuPDF>=1.24,<2.0",
+  "pypdf>=4.3,<6.0",
 ]
 
+# NOTE: S3 进入前需梳理依赖分组——stack 中的 watchdog/hnswlib 等是核心
+# 运行时依赖，如需 `pip install opendocs` 即可完整使用，应迁回 dependencies。
+# 当前分组不影响 S2 功能正确性。
 [project.optional-dependencies]
 dev = [
   "pytest>=8.2,<9.0",
@@ -26,10 +32,8 @@ dev = [
 stack = [
   "watchdog>=4.0,<5.0",
   "hnswlib>=0.8,<0.9",
-  "python-docx>=1.1,<2.0",
-  "PyMuPDF>=1.24,<2.0",
-  "pypdf>=4.3,<6.0",
   "Jinja2>=3.1,<4.0",
+  "keyring>=25.0,<26.0",
   "pyinstaller>=6.0,<7.0",
 ]
 

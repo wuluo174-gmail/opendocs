@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from opendocs.parsers._encoding import read_text_with_fallback
 from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument
 
 
@@ -15,69 +16,42 @@ class TxtParser(BaseParser):
         return [".txt"]
 
     def parse(self, file_path: Path) -> ParsedDocument:
-        text = file_path.read_text(encoding="utf-8", errors="replace")
+        text = read_text_with_fallback(file_path)
 
         # Split by double newline (blank-line separated paragraphs)
         raw_paragraphs = re.split(r"\n\s*\n", text)
 
-        paragraphs: list[Paragraph] = []
-        offset = 0
-        idx = 0
-        remaining = text
-
+        # Collect stripped, non-empty entries
+        entries: list[str] = []
         for raw in raw_paragraphs:
             stripped = raw.strip()
-            if not stripped:
-                # advance offset past the empty segment
-                pos = remaining.find(raw)
-                if pos >= 0:
-                    offset += pos + len(raw)
-                    remaining = text[offset:]
-                continue
+            if stripped:
+                entries.append(stripped)
 
-            # Find position of this paragraph text in remaining text
-            pos = remaining.find(raw)
-            if pos < 0:
-                # fallback: find stripped version
-                pos = remaining.find(stripped)
-                if pos >= 0:
-                    start = offset + pos
-                    end = start + len(stripped)
-                else:
-                    start = offset
-                    end = start + len(stripped)
-            else:
-                start = offset + pos
-                end = start + len(raw)
-
+        # Build raw_text from entries and compute offsets cumulatively
+        raw_text = "\n".join(entries)
+        paragraphs: list[Paragraph] = []
+        offset = 0
+        for idx, entry in enumerate(entries):
+            start = offset
+            end = offset + len(entry)
             paragraphs.append(
                 Paragraph(
-                    text=stripped,
+                    text=entry,
                     index=idx,
                     start_char=start,
                     end_char=end,
                 )
             )
-            idx += 1
+            offset = end + 1  # +1 for the \n separator
 
-            # Advance offset past this paragraph
-            new_offset = start + len(raw)
-            if new_offset > offset:
-                offset = new_offset
-                remaining = text[offset:]
-
-        # Title = first non-empty line
-        title = None
-        for line in text.splitlines():
-            line_stripped = line.strip()
-            if line_stripped:
-                title = line_stripped
-                break
+        # Title = first non-empty entry
+        title = entries[0] if entries else None
 
         return ParsedDocument(
             file_path=str(file_path),
             file_type="txt",
-            raw_text=text,
+            raw_text=raw_text,
             title=title,
             paragraphs=paragraphs,
         )

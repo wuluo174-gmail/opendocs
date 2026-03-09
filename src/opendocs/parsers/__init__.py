@@ -3,6 +3,7 @@
 from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument, ParserRegistry
 from opendocs.parsers.docx_parser import DocxParser
 from opendocs.parsers.md_parser import MdParser
+from opendocs.parsers.normalization import normalize_text
 from opendocs.parsers.pdf_parser import PdfParser
 from opendocs.parsers.txt_parser import TxtParser
 
@@ -16,6 +17,7 @@ __all__ = [
     "DocxParser",
     "PdfParser",
     "create_default_registry",
+    "normalize_text",
 ]
 
 

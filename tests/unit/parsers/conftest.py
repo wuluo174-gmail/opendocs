@@ -103,6 +103,44 @@ def tmp_docx_chinese(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
+def tmp_docx_with_table(tmp_path: Path) -> Path:
+    """Create a .docx file containing a table."""
+    pytest.importorskip("docx")
+    from docx import Document  # type: ignore[import-untyped]
+
+    doc = Document()
+    doc.add_heading("Report", level=1)
+    doc.add_paragraph("Intro text.")
+    table = doc.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Name"
+    table.cell(0, 1).text = "Score"
+    table.cell(1, 0).text = "Alice"
+    table.cell(1, 1).text = "95"
+    doc.add_paragraph("Closing text.")
+    p = tmp_path / "table.docx"
+    doc.save(str(p))
+    return p
+
+
+@pytest.fixture()
+def tmp_md_frontmatter(tmp_path: Path) -> Path:
+    """Create a .md file with YAML frontmatter."""
+    content = (
+        "---\n"
+        "title: My Document\n"
+        "date: 2026-01-01\n"
+        "---\n"
+        "\n"
+        "# Actual Title\n"
+        "\n"
+        "Body content here.\n"
+    )
+    p = tmp_path / "frontmatter.md"
+    p.write_text(content, encoding="utf-8")
+    return p
+
+
+@pytest.fixture()
 def tmp_docx_empty(tmp_path: Path) -> Path:
     """Create a .docx with no paragraphs (just an empty doc)."""
     pytest.importorskip("docx")
@@ -110,6 +148,35 @@ def tmp_docx_empty(tmp_path: Path) -> Path:
 
     doc = Document()
     p = tmp_path / "empty.docx"
+    doc.save(str(p))
+    return p
+
+
+@pytest.fixture()
+def tmp_docx_with_hyperlink(tmp_path: Path) -> Path:
+    """Create a .docx where a paragraph contains a hyperlink run."""
+    pytest.importorskip("docx")
+    from docx import Document  # type: ignore[import-untyped]
+    from docx.oxml.ns import qn  # type: ignore[import-untyped]
+    from docx.oxml import OxmlElement  # type: ignore[import-untyped]
+
+    doc = Document()
+    doc.add_heading("Title", level=1)
+    para = doc.add_paragraph()
+    # Add a normal run
+    run1 = para.add_run("Click ")
+    # Add a hyperlink element containing a run
+    hyperlink = OxmlElement("w:hyperlink")
+    run_in_link = OxmlElement("w:r")
+    t_elem = OxmlElement("w:t")
+    t_elem.text = "here"
+    run_in_link.append(t_elem)
+    hyperlink.append(run_in_link)
+    para._element.append(hyperlink)
+    # Add trailing normal run
+    run2 = para.add_run(" please")
+
+    p = tmp_path / "hyperlink.docx"
     doc.save(str(p))
     return p
 
@@ -153,6 +220,50 @@ def tmp_pdf_empty(tmp_path: Path) -> Path:
     doc = fitz.open()
     doc.new_page()  # blank page
     p = tmp_path / "empty.pdf"
+    doc.save(str(p))
+    doc.close()
+    return p
+
+
+@pytest.fixture()
+def tmp_pdf_with_toc(tmp_path: Path) -> Path:
+    """Create a multi-page PDF with TOC bookmarks for heading_path testing."""
+    fitz = pytest.importorskip("fitz")
+    doc = fitz.open()
+
+    page1 = doc.new_page()
+    page1.insert_text((72, 72), "Chapter 1 Introduction\n\nIntro content here.")
+
+    page2 = doc.new_page()
+    page2.insert_text((72, 72), "Chapter 2 Methods\n\nMethods content here.")
+
+    page3 = doc.new_page()
+    page3.insert_text((72, 72), "Section 2.1 Details\n\nDetailed methods.")
+
+    # Add TOC bookmarks: [level, title, page_1based]
+    doc.set_toc([
+        [1, "Chapter 1 Introduction", 1],
+        [1, "Chapter 2 Methods", 2],
+        [2, "Section 2.1 Details", 3],
+    ])
+
+    p = tmp_path / "toc.pdf"
+    doc.save(str(p))
+    doc.close()
+    return p
+
+
+@pytest.fixture()
+def tmp_pdf_multipage(tmp_path: Path) -> Path:
+    """Create a multi-page PDF for cross-page chunk testing."""
+    fitz = pytest.importorskip("fitz")
+    doc = fitz.open()
+
+    for i in range(1, 4):
+        page = doc.new_page()
+        page.insert_text((72, 72), f"Page {i} content paragraph.")
+
+    p = tmp_path / "multipage.pdf"
     doc.save(str(p))
     doc.close()
     return p

@@ -11,6 +11,21 @@ from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument
 _HEADING_STYLE_RE = re.compile(r"^Heading\s*(\d+)$", re.IGNORECASE)
 
 
+def _extract_paragraph_text(para_element, qn) -> str:
+    """Flatten a ``w:p`` element while preserving inline control characters."""
+    parts: list[str] = []
+    for node in para_element.iter():
+        tag = getattr(node, "tag", None)
+        if tag == qn("w:t"):
+            if node.text:
+                parts.append(node.text)
+        elif tag == qn("w:tab"):
+            parts.append("\t")
+        elif tag in {qn("w:br"), qn("w:cr")}:
+            parts.append("\n")
+    return "".join(parts).strip()
+
+
 class DocxParser(BaseParser):
     """Parse ``.docx`` files via *python-docx*."""
 
@@ -32,11 +47,8 @@ class DocxParser(BaseParser):
 
         heading_stack: list[tuple[int, str]] = []
         current_heading_path: str | None = None
-        paragraphs: list[Paragraph] = []
-        raw_parts: list[str] = []
-        offset = 0
-        idx = 0
         title: str | None = None
+        failed_paras: list[int] = []
 
         # Try document core properties title first
         try:
@@ -45,44 +57,104 @@ class DocxParser(BaseParser):
         except Exception:  # noqa: BLE001
             pass
 
-        for para in doc.paragraphs:
-            text = para.text.strip()
-            if not text:
-                # Still account for the newline separator
-                raw_parts.append("")
-                offset += 1  # for the \n
-                continue
+        # Iterate doc.element.body children in document order so that
+        # tables inherit the heading_path of the heading that precedes them
+        # (not the last heading in the entire document).
+        from docx.oxml.ns import qn  # type: ignore[import-untyped]
+        from docx.table import Table  # type: ignore[import-untyped]
 
-            style_name = para.style.name if para.style else ""
-            m = _HEADING_STYLE_RE.match(style_name)
+        entries: list[tuple[str, str | None]] = []  # (text, heading_path)
+        xml_para_idx = 0  # counts all w:p elements (for internal tracking)
+        for child in doc.element.body:
+            tag = child.tag
 
-            if m:
-                level = int(m.group(1))
-                while heading_stack and heading_stack[-1][0] >= level:
-                    heading_stack.pop()
-                heading_stack.append((level, text))
-                current_heading_path = " > ".join(h[1] for h in heading_stack)
+            if tag == qn("w:p"):
+                # Paragraph element
+                try:
+                    text = _extract_paragraph_text(child, qn)
+                except Exception:  # noqa: BLE001
+                    # Record the output-relative index so error messages
+                    # align with Paragraph.index in the final result.
+                    failed_paras.append(len(entries))
+                    xml_para_idx += 1
+                    continue
 
-                if title is None:
-                    title = text
+                xml_para_idx += 1
+                if not text:
+                    continue
 
+                # Determine style name from XML
+                pPr = child.find(qn("w:pPr"))
+                style_name = ""
+                if pPr is not None:
+                    pStyle = pPr.find(qn("w:pStyle"))
+                    if pStyle is not None:
+                        style_name = pStyle.get(qn("w:val"), "")
+
+                m = _HEADING_STYLE_RE.match(style_name)
+                if m:
+                    level = int(m.group(1))
+                    while heading_stack and heading_stack[-1][0] >= level:
+                        heading_stack.pop()
+                    heading_stack.append((level, text))
+                    current_heading_path = " > ".join(h[1] for h in heading_stack)
+
+                    if title is None and level == 1:
+                        title = text
+
+                entries.append((text, current_heading_path))
+
+            elif tag == qn("w:tbl"):
+                # Table element — process rows in document order
+                try:
+                    table = Table(child, doc)
+                    for row in table.rows:
+                        cells_text: list[str] = []
+                        for cell in row.cells:
+                            try:
+                                ct = cell.text.strip()
+                            except Exception:  # noqa: BLE001
+                                continue
+                            if ct:
+                                cells_text.append(ct)
+                        if cells_text:
+                            row_text = " | ".join(cells_text)
+                            entries.append((row_text, current_heading_path))
+                except Exception:  # noqa: BLE001
+                    pass
+
+        # If no Heading 1 title and no core_properties title, use first entry
+        if title is None and entries:
+            title = entries[0][0]
+
+        # Build raw_text then compute offsets from it
+        raw_text = "\n".join(e[0] for e in entries)
+        paragraphs: list[Paragraph] = []
+        offset = 0
+        for idx, (text, heading_path) in enumerate(entries):
             start = offset
             end = offset + len(text)
-
             paragraphs.append(
                 Paragraph(
                     text=text,
                     index=idx,
                     start_char=start,
                     end_char=end,
-                    heading_path=current_heading_path,
+                    heading_path=heading_path,
                 )
             )
-            idx += 1
-            raw_parts.append(text)
-            offset = end + 1  # +1 for newline separator
+            offset = end + 1  # +1 for the \n separator
 
-        raw_text = "\n".join(raw_parts)
+        # Determine parse status
+        if failed_paras and not entries:
+            parse_status = "failed"
+            error_info = f"all paragraphs failed: {failed_paras}"
+        elif failed_paras:
+            parse_status = "partial"
+            error_info = f"failed paragraphs at indices: {failed_paras}"
+        else:
+            parse_status = "success"
+            error_info = None
 
         return ParsedDocument(
             file_path=str(file_path),
@@ -90,4 +162,6 @@ class DocxParser(BaseParser):
             raw_text=raw_text,
             title=title,
             paragraphs=paragraphs,
+            parse_status=parse_status,
+            error_info=error_info,
         )
