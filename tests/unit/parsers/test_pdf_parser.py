@@ -8,7 +8,7 @@ import pytest
 
 fitz = pytest.importorskip("fitz")
 
-from opendocs.parsers.pdf_parser import PdfParser
+from opendocs.parsers.pdf_parser import PdfParser  # noqa: E402
 
 
 class TestPdfParser:
@@ -111,11 +111,13 @@ class TestPdfParser:
         page = doc.new_page()
         page.insert_text((72, 72), "Content on single page.")
         # TOC: H1 Ch1, H2 Sec1.1, H1 Ch2 — all on page 1
-        doc.set_toc([
-            [1, "Ch1", 1],
-            [2, "Sec1.1", 1],
-            [1, "Ch2", 1],
-        ])
+        doc.set_toc(
+            [
+                [1, "Ch1", 1],
+                [2, "Sec1.1", 1],
+                [1, "Ch2", 1],
+            ]
+        )
         pdf_path = tmp_path / "same_page_toc.pdf"
         doc.save(str(pdf_path))
         doc.close()
@@ -166,4 +168,4 @@ class TestPdfParser:
         assert len(result.paragraphs) >= 1
         # Offsets must remain valid
         for para in result.paragraphs:
-            assert result.raw_text[para.start_char:para.end_char] == para.text
+            assert result.raw_text[para.start_char : para.end_char] == para.text

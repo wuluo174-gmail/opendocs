@@ -77,6 +77,25 @@ def test_install_locked_dependencies_uses_lock_then_editable_no_deps(
     ]
 
 
+def test_install_locked_dependencies_fails_when_lock_contains_remote_dependency(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lock_path = tmp_path / "requirements.lock"
+    lock_path.write_text(
+        "pytest==8.4.2\n-e git+https://example.com/opendocs.git#egg=opendocs\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(_MODULE, "_requirements_lock_path", lambda: lock_path)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(_MODULE, "_run", lambda cmd: commands.append(cmd) or 0)
+
+    exit_code = _MODULE._install_locked_dependencies()
+
+    assert exit_code == 1
+    assert commands == []
+
+
 def test_install_locked_dependencies_fails_when_hnswlib_check_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -120,3 +139,15 @@ def test_requirements_lock_header_mentions_python311_baseline() -> None:
     lock_path = Path(__file__).resolve().parents[2] / "requirements.lock"
     header_line = lock_path.read_text(encoding="utf-8").splitlines()[2]
     assert header_line == "# Runtime: Python 3.11 baseline"
+
+
+def test_requirements_lock_has_no_remote_or_vcs_lines() -> None:
+    lock_path = Path(__file__).resolve().parents[2] / "requirements.lock"
+    lines = [
+        line.strip()
+        for line in lock_path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert all("git+" not in line for line in lines)
+    assert all("http://" not in line for line in lines)
+    assert all("https://" not in line for line in lines)

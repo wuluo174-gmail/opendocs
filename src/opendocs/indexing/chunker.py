@@ -159,14 +159,17 @@ class Chunker:
                 )
             ]
 
-        # Group paragraphs into segments by heading_path
-        # Each segment: list of consecutive paragraphs with same heading_path
+        # Group paragraphs into segments by locator boundary.
+        # Heading changes must split chunks, and PDF page changes must also
+        # split chunks so that page_no remains truthful for citations.
         segments: list[list[int]] = []  # list of paragraph indices
-        current_heading: str | None = object()  # sentinel
+        sentinel = object()
+        current_segment_key: object | tuple[str | None, int | None] = sentinel
         for i, para in enumerate(doc.paragraphs):
-            if para.heading_path != current_heading:
+            segment_key = (para.heading_path, para.page_no)
+            if segment_key != current_segment_key:
                 segments.append([])
-                current_heading = para.heading_path
+                current_segment_key = segment_key
             segments[-1].append(i)
 
         overlap_chars = int(effective_max * cfg.overlap_ratio)

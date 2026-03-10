@@ -157,14 +157,13 @@ def tmp_docx_with_hyperlink(tmp_path: Path) -> Path:
     """Create a .docx where a paragraph contains a hyperlink run."""
     pytest.importorskip("docx")
     from docx import Document  # type: ignore[import-untyped]
-    from docx.oxml.ns import qn  # type: ignore[import-untyped]
     from docx.oxml import OxmlElement  # type: ignore[import-untyped]
 
     doc = Document()
     doc.add_heading("Title", level=1)
     para = doc.add_paragraph()
     # Add a normal run
-    run1 = para.add_run("Click ")
+    para.add_run("Click ")
     # Add a hyperlink element containing a run
     hyperlink = OxmlElement("w:hyperlink")
     run_in_link = OxmlElement("w:r")
@@ -174,7 +173,7 @@ def tmp_docx_with_hyperlink(tmp_path: Path) -> Path:
     hyperlink.append(run_in_link)
     para._element.append(hyperlink)
     # Add trailing normal run
-    run2 = para.add_run(" please")
+    para.add_run(" please")
 
     p = tmp_path / "hyperlink.docx"
     doc.save(str(p))

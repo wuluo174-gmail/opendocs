@@ -8,7 +8,7 @@ import pytest
 
 docx = pytest.importorskip("docx")
 
-from opendocs.parsers.docx_parser import DocxParser
+from opendocs.parsers.docx_parser import DocxParser  # noqa: E402
 
 
 class TestDocxParser:
@@ -144,9 +144,6 @@ class TestDocxParser:
 
     def test_partial_status_when_some_paragraphs_fail(self, tmp_path: Path) -> None:
         """S2-T04: DOCX with some unreadable paragraphs should yield partial."""
-        from unittest.mock import patch
-
-        docx_mod = pytest.importorskip("docx")
         from docx import Document  # type: ignore[import-untyped]
 
         doc = Document()
@@ -156,20 +153,8 @@ class TestDocxParser:
         docx_path = tmp_path / "partial.docx"
         doc.save(str(docx_path))
 
-        # Monkey-patch: make the parser's XML run extraction fail for
-        # the second w:p element that has text (i.e., after heading).
-        original_parse = self.parser.parse
-
-        def parse_with_partial_failure(file_path):
-            from docx.oxml.ns import qn  # type: ignore[import-untyped]
-
-            result = original_parse(file_path)
-            # We can't easily inject a per-paragraph XML failure, so instead
-            # directly construct a partial result to verify downstream handling.
-            return result
-
-        # Instead of fragile XML injection, directly test the DocxParser's
-        # partial-status code path by crafting entries + failed_paras in isolation.
+        # Instead of fragile XML injection, directly validate the contract
+        # for a parser result that contains usable paragraphs plus failures.
         from opendocs.parsers.base import Paragraph, ParsedDocument
 
         result = ParsedDocument(
@@ -178,8 +163,20 @@ class TestDocxParser:
             raw_text="Title\nGood paragraph one.",
             title="Title",
             paragraphs=[
-                Paragraph(text="Title", index=0, start_char=0, end_char=5, heading_path="Title"),
-                Paragraph(text="Good paragraph one.", index=1, start_char=6, end_char=25, heading_path="Title"),
+                Paragraph(
+                    text="Title",
+                    index=0,
+                    start_char=0,
+                    end_char=5,
+                    heading_path="Title",
+                ),
+                Paragraph(
+                    text="Good paragraph one.",
+                    index=1,
+                    start_char=6,
+                    end_char=25,
+                    heading_path="Title",
+                ),
             ],
             parse_status="partial",
             error_info="failed paragraphs at indices: [2]",
@@ -191,4 +188,4 @@ class TestDocxParser:
         assert len(result.paragraphs) == 2
         # Offsets valid
         for para in result.paragraphs:
-            assert result.raw_text[para.start_char:para.end_char] == para.text
+            assert result.raw_text[para.start_char : para.end_char] == para.text

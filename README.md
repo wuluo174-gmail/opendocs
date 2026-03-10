@@ -1,6 +1,6 @@
 ﻿# OpenDocs
 
-OpenDocs 是本地优先、证据优先的桌面 AI 文档管理系统。本仓库当前完成 S1（领域模型与存储基线）。
+OpenDocs 是本地优先、证据优先的桌面 AI 文档管理系统。本仓库当前覆盖 S0-S2，并正在收口这些阶段的基线问题。
 
 ## 安装
 
@@ -27,6 +27,8 @@ py -3.11 -m venv .venv
 ```bash
 python scripts/bootstrap_dev.py
 ```
+
+该脚本只会安装 `requirements.lock` 中锁定的第三方依赖，并把当前仓库作为本地 editable 包安装；不会再从远端仓库拉取 `opendocs` 自身代码。
 
 如需直接执行主规范中的安装验证命令，请使用 Python 3.11：
 
