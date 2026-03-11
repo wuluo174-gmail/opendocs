@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from opendocs.app import FileOperationService
 from opendocs.domain.models import AuditLogModel, FileOperationPlanModel
 from opendocs.exceptions import FileOpFailedError, PlanNotApprovedError
+from opendocs.storage.db import session_scope
 from opendocs.storage.repositories import AuditRepository, PlanRepository
 
 
@@ -180,6 +181,40 @@ def test_execute_plan_sets_failed_status_on_executor_error(engine: Engine) -> No
         assert failed_plan.executed_at is not None  # records when the failure happened
 
         audits = AuditRepository(session).query(trace_id="trace-fail-executor")
+        assert len(audits) == 1
+        assert audits[0].result == "failure"
+        assert "disk full" in audits[0].detail_json.get("exec_error", "")
+
+
+def test_executor_error_persists_failure_state_across_session_scope_rollback(
+    engine: Engine,
+) -> None:
+    """Failure audit must survive the default session_scope() rollback path."""
+
+    def bad_executor(plan: FileOperationPlanModel) -> None:
+        raise RuntimeError("disk full")
+
+    plan = _draft_plan()
+    with session_scope(engine) as session:
+        PlanRepository(session).create(plan)
+
+    with pytest.raises(FileOpFailedError, match="disk full"):
+        with session_scope(engine) as session:
+            service = FileOperationService(session, operation_executor=bad_executor)
+            service.approve_plan(plan.plan_id)
+            service.execute_plan(
+                plan.plan_id,
+                actor="system",
+                trace_id="trace-session-scope-failure",
+            )
+
+    with Session(engine) as session:
+        failed_plan = PlanRepository(session).get_by_id(plan.plan_id)
+        assert failed_plan is not None
+        assert failed_plan.status == "failed"
+        assert failed_plan.executed_at is not None
+
+        audits = AuditRepository(session).query(trace_id="trace-session-scope-failure")
         assert len(audits) == 1
         assert audits[0].result == "failure"
         assert "disk full" in audits[0].detail_json.get("exec_error", "")

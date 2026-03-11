@@ -83,11 +83,7 @@ class MdParser(BaseParser):
             # Setext-style heading: previous buffer has exactly one non-empty
             # line and current line is === or ---
             setext_level = 0
-            if (
-                len(buf_lines) == 1
-                and buf_lines[0].strip()
-                and not in_fence
-            ):
+            if len(buf_lines) == 1 and buf_lines[0].strip() and not in_fence:
                 if _SETEXT_H1_RE.match(line):
                     setext_level = 1
                 elif _SETEXT_H2_RE.match(line):

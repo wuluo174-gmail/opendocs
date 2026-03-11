@@ -467,7 +467,7 @@ class TestChunkerOffsetLocator:
     """char_start/char_end must locate valid content in raw_text."""
 
     def test_chunk_offsets_locate_in_raw_text(self) -> None:
-        """For every chunk, raw_text[char_start:char_end] must be a substring of chunk.text."""
+        """For every chunk, raw_text[char_start:char_end] must exactly equal chunk.text."""
         paras = [
             Paragraph(text="A" * 500, index=0, start_char=0, end_char=500),
             Paragraph(text="B" * 500, index=1, start_char=501, end_char=1001),
@@ -481,9 +481,9 @@ class TestChunkerOffsetLocator:
         assert len(chunks) >= 2
         for c in chunks:
             located = doc.raw_text[c.char_start : c.char_end]
-            assert located in c.text, (
+            assert located == c.text, (
                 f"chunk {c.chunk_index}: raw_text[{c.char_start}:{c.char_end}] "
-                f"not found in chunk text"
+                "does not match chunk text"
             )
 
     def test_chunk_offsets_cover_full_document(self) -> None:
@@ -666,7 +666,7 @@ class TestChunkerPartialDocument:
         # Offsets must be valid
         for c in chunks:
             located = doc.raw_text[c.char_start : c.char_end]
-            assert located in c.text
+            assert located == c.text
 
     def test_partial_doc_not_rejected_like_failed(self) -> None:
         """partial != failed: chunker must NOT return empty for partial docs."""

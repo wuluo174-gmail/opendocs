@@ -126,14 +126,7 @@ def tmp_docx_with_table(tmp_path: Path) -> Path:
 def tmp_md_frontmatter(tmp_path: Path) -> Path:
     """Create a .md file with YAML frontmatter."""
     content = (
-        "---\n"
-        "title: My Document\n"
-        "date: 2026-01-01\n"
-        "---\n"
-        "\n"
-        "# Actual Title\n"
-        "\n"
-        "Body content here.\n"
+        "---\ntitle: My Document\ndate: 2026-01-01\n---\n\n# Actual Title\n\nBody content here.\n"
     )
     p = tmp_path / "frontmatter.md"
     p.write_text(content, encoding="utf-8")
@@ -240,11 +233,13 @@ def tmp_pdf_with_toc(tmp_path: Path) -> Path:
     page3.insert_text((72, 72), "Section 2.1 Details\n\nDetailed methods.")
 
     # Add TOC bookmarks: [level, title, page_1based]
-    doc.set_toc([
-        [1, "Chapter 1 Introduction", 1],
-        [1, "Chapter 2 Methods", 2],
-        [2, "Section 2.1 Details", 3],
-    ])
+    doc.set_toc(
+        [
+            [1, "Chapter 1 Introduction", 1],
+            [1, "Chapter 2 Methods", 2],
+            [2, "Section 2.1 Details", 3],
+        ]
+    )
 
     p = tmp_path / "toc.pdf"
     doc.save(str(p))

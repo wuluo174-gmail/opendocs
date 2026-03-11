@@ -66,17 +66,22 @@ CREATE TABLE chunks (
     ),
     chunk_index INTEGER NOT NULL CHECK (chunk_index >= 0),
     text TEXT NOT NULL,
-    char_start INTEGER NOT NULL,
+    char_start INTEGER NOT NULL CHECK (char_start >= 0),
     char_end INTEGER NOT NULL CHECK (char_end >= char_start),
-    page_no INTEGER,
-    paragraph_start INTEGER,
-    paragraph_end INTEGER,
+    page_no INTEGER CHECK (page_no IS NULL OR page_no >= 1),
+    paragraph_start INTEGER CHECK (paragraph_start IS NULL OR paragraph_start >= 0),
+    paragraph_end INTEGER CHECK (paragraph_end IS NULL OR paragraph_end >= 0),
     heading_path TEXT,
     token_estimate INTEGER,
     embedding_model TEXT,
     embedding_key TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    CHECK (
+        paragraph_start IS NULL
+        OR paragraph_end IS NULL
+        OR paragraph_end >= paragraph_start
+    ),
     FOREIGN KEY(doc_id) REFERENCES documents(doc_id) ON DELETE CASCADE,
     UNIQUE(doc_id, chunk_index)
 );

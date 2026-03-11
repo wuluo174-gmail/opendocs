@@ -35,8 +35,7 @@ class TestDocxParser:
         result = self.parser.parse(tmp_docx)
         # Find paragraphs under Heading Two
         h2_paras = [
-            p for p in result.paragraphs
-            if p.heading_path and "Heading Two" in p.heading_path
+            p for p in result.paragraphs if p.heading_path and "Heading Two" in p.heading_path
         ]
         assert len(h2_paras) > 0
         # Heading Two (level 2) should be nested under Heading One (level 1)
@@ -189,3 +188,24 @@ class TestDocxParser:
         # Offsets valid
         for para in result.paragraphs:
             assert result.raw_text[para.start_char : para.end_char] == para.text
+
+    def test_partial_status_when_table_block_fails(
+        self,
+        tmp_docx_with_table: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """S2-T04: broken table extraction must be auditable as partial."""
+        import docx.table as docx_table  # type: ignore[import-untyped]
+
+        def _broken_table(*_args, **_kwargs):
+            raise RuntimeError("broken table")
+
+        monkeypatch.setattr(docx_table, "Table", _broken_table)
+
+        result = self.parser.parse(tmp_docx_with_table)
+
+        assert result.parse_status == "partial"
+        assert result.error_info is not None
+        assert "failed table blocks" in result.error_info
+        assert "Intro text." in result.raw_text
+        assert "Closing text." in result.raw_text

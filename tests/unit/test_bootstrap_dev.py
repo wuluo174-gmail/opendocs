@@ -96,27 +96,29 @@ def test_install_locked_dependencies_fails_when_lock_contains_remote_dependency(
     assert commands == []
 
 
-def test_install_locked_dependencies_fails_when_hnswlib_check_fails(
+def test_install_locked_dependencies_fails_when_hnswlib_import_check_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     lock_path = tmp_path / "requirements.lock"
     lock_path.write_text("pytest==8.4.2\n", encoding="utf-8")
+    project_root = tmp_path / "repo-root"
+    project_root.mkdir(parents=True)
+
+    commands: list[list[str]] = []
+
+    def _fake_run(cmd: list[str]) -> int:
+        commands.append(cmd)
+        return 1 if cmd == [sys.executable, "-c", "import hnswlib"] else 0
+
     monkeypatch.setattr(_MODULE, "_requirements_lock_path", lambda: lock_path)
-
-    call_count = {"n": 0}
-
-    def _fake_run(_cmd: list[str]) -> int:
-        call_count["n"] += 1
-        if call_count["n"] < 3:
-            return 0
-        return 1
-
+    monkeypatch.setattr(_MODULE, "_project_root", lambda: project_root)
     monkeypatch.setattr(_MODULE, "_run", _fake_run)
 
     exit_code = _MODULE._install_locked_dependencies()
 
     assert exit_code == 1
+    assert commands[-1] == [sys.executable, "-c", "import hnswlib"]
 
 
 def test_pyproject_requires_python_is_locked_to_311() -> None:
@@ -133,6 +135,22 @@ def test_pyproject_has_ruff_format_baseline_config() -> None:
         "indent-style": "space",
         "line-ending": "lf",
     }
+
+
+def test_pyproject_dev_extra_contains_locked_stack_dependencies() -> None:
+    pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    dev_dependencies = set(data["project"]["optional-dependencies"]["dev"])
+    required_prefixes = {
+        "watchdog>=",
+        "hnswlib>=",
+        "Jinja2>=",
+        "keyring>=",
+        "pyinstaller>=",
+    }
+
+    for prefix in required_prefixes:
+        assert any(dep.startswith(prefix) for dep in dev_dependencies), prefix
 
 
 def test_requirements_lock_header_mentions_python311_baseline() -> None:

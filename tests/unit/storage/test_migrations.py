@@ -221,6 +221,81 @@ def test_migration_enforces_chunk_char_range_constraint(db_path: Path) -> None:
         connection.close()
 
 
+def test_migration_enforces_chunk_locator_constraints(db_path: Path) -> None:
+    migrate(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
+            """
+            INSERT INTO documents (
+                doc_id, path, relative_path, source_root_id, source_path, hash_sha256,
+                title, file_type, size_bytes, created_at, modified_at, parse_status,
+                sensitivity, is_deleted_from_fs
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "10101010-1010-4010-8010-101010101010",
+                "/tmp/locator.md",
+                "locator.md",
+                "20202020-2020-4020-8020-202020202020",
+                "/tmp/locator.md",
+                "a" * 64,
+                "locator",
+                "md",
+                128,
+                "2026-03-03T00:00:00",
+                "2026-03-03T00:00:00",
+                "success",
+                "internal",
+                0,
+            ),
+        )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO chunks (
+                    chunk_id, doc_id, chunk_index, text, char_start, char_end,
+                    page_no, paragraph_start, paragraph_end
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "30303030-3030-4030-8030-303030303030",
+                    "10101010-1010-4010-8010-101010101010",
+                    0,
+                    "bad locator",
+                    -1,
+                    10,
+                    -1,
+                    -3,
+                    -2,
+                ),
+            )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO chunks (
+                    chunk_id, doc_id, chunk_index, text, char_start, char_end,
+                    paragraph_start, paragraph_end
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "40404040-4040-4040-8040-404040404040",
+                    "10101010-1010-4010-8010-101010101010",
+                    1,
+                    "bad paragraph range",
+                    0,
+                    19,
+                    5,
+                    3,
+                ),
+            )
+    finally:
+        connection.close()
+
+
 def test_migration_enforces_document_id_and_hash_format(db_path: Path) -> None:
     migrate(db_path)
     connection = sqlite3.connect(db_path)

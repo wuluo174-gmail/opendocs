@@ -36,9 +36,7 @@ class DocxParser(BaseParser):
         try:
             from docx import Document  # type: ignore[import-untyped]
         except ImportError as exc:
-            raise ParseFailedError(
-                "python-docx is not installed"
-            ) from exc
+            raise ParseFailedError("python-docx is not installed") from exc
 
         try:
             doc = Document(str(file_path))
@@ -49,6 +47,7 @@ class DocxParser(BaseParser):
         current_heading_path: str | None = None
         title: str | None = None
         failed_paras: list[int] = []
+        failed_tables: list[int] = []
 
         # Try document core properties title first
         try:
@@ -65,6 +64,7 @@ class DocxParser(BaseParser):
 
         entries: list[tuple[str, str | None]] = []  # (text, heading_path)
         xml_para_idx = 0  # counts all w:p elements (for internal tracking)
+        table_block_idx = 0
         for child in doc.element.body:
             tag = child.tag
 
@@ -121,7 +121,9 @@ class DocxParser(BaseParser):
                             row_text = " | ".join(cells_text)
                             entries.append((row_text, current_heading_path))
                 except Exception:  # noqa: BLE001
-                    pass
+                    failed_tables.append(table_block_idx)
+                finally:
+                    table_block_idx += 1
 
         # If no Heading 1 title and no core_properties title, use first entry
         if title is None and entries:
@@ -146,12 +148,18 @@ class DocxParser(BaseParser):
             offset = end + 1  # +1 for the \n separator
 
         # Determine parse status
-        if failed_paras and not entries:
+        failure_messages: list[str] = []
+        if failed_paras:
+            failure_messages.append(f"failed paragraphs at indices: {failed_paras}")
+        if failed_tables:
+            failure_messages.append(f"failed table blocks: {failed_tables}")
+
+        if failure_messages and not entries:
             parse_status = "failed"
-            error_info = f"all paragraphs failed: {failed_paras}"
-        elif failed_paras:
+            error_info = "; ".join(failure_messages)
+        elif failure_messages:
             parse_status = "partial"
-            error_info = f"failed paragraphs at indices: {failed_paras}"
+            error_info = "; ".join(failure_messages)
         else:
             parse_status = "success"
             error_info = None

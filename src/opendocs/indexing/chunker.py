@@ -25,10 +25,12 @@ def _estimate_tokens(text: str) -> int:
     latin = 0
     for ch in text:
         cp = ord(ch)
-        if (0x4E00 <= cp <= 0x9FFF
-                or 0x3400 <= cp <= 0x4DBF
-                or 0xF900 <= cp <= 0xFAFF
-                or 0x20000 <= cp <= 0x2FA1F):
+        if (
+            0x4E00 <= cp <= 0x9FFF
+            or 0x3400 <= cp <= 0x4DBF
+            or 0xF900 <= cp <= 0xFAFF
+            or 0x20000 <= cp <= 0x2FA1F
+        ):
             cjk += 1
         elif cp > 0x20:
             latin += 1
@@ -46,10 +48,12 @@ def _detect_cjk_ratio(text: str) -> float:
         if cp <= 0x20:
             continue
         total += 1
-        if (0x4E00 <= cp <= 0x9FFF
-                or 0x3400 <= cp <= 0x4DBF
-                or 0xF900 <= cp <= 0xFAFF
-                or 0x20000 <= cp <= 0x2FA1F):
+        if (
+            0x4E00 <= cp <= 0x9FFF
+            or 0x3400 <= cp <= 0x4DBF
+            or 0xF900 <= cp <= 0xFAFF
+            or 0x20000 <= cp <= 0x2FA1F
+        ):
             cjk += 1
     return cjk / total if total else 0.0
 
@@ -75,10 +79,9 @@ class ChunkResult:
     """A single chunk produced from a parsed document.
 
     When overlap is enabled, ``text`` may contain a prefix carried over from
-    the previous chunk.  ``char_start`` and ``char_end`` always refer to the
-    *new* content's position in the source document (i.e. they correspond to
-    the paragraph offsets, not to the overlap prefix).  This means
-    ``len(text) >= char_end - char_start`` when overlap is present.
+    the previous chunk.  ``char_start`` and ``char_end`` always bound the
+    exact source span used to build ``text``.  This keeps locator metadata
+    self-consistent for later indexing and citation use.
     """
 
     chunk_index: int
@@ -175,13 +178,13 @@ class Chunker:
         overlap_chars = int(effective_max * cfg.overlap_ratio)
         results: list[ChunkResult] = []
         chunk_idx = 0
-        prev_tail = ""  # overlap text from previous chunk
+        overlap_start: int | None = None
 
         for seg in segments:
             # Reset overlap at heading boundaries – overlap must not carry
             # text from a different heading section into a new one, as this
             # would create semantically confusing chunks (ADR-0010 scope).
-            prev_tail = ""
+            overlap_start = None
 
             # Within a segment, accumulate paragraphs until effective_max
             buf_paras: list[int] = []
@@ -193,17 +196,22 @@ class Chunker:
 
                 # Would adding this paragraph exceed effective_max?
                 projected = buf_len + (1 if buf_len > 0 else 0) + para_len
-                overlap_extra = len(prev_tail) + 1 if prev_tail and not buf_paras else 0
+                overlap_extra = 0
+                if overlap_start is not None and not buf_paras:
+                    overlap_extra = para.start_char - overlap_start
                 total = projected + overlap_extra
 
                 if buf_paras and total > effective_max:
                     # Flush current buffer
                     chunk_idx = self._flush_buf(
-                        doc, buf_paras, results, chunk_idx, prev_tail, cfg,
+                        doc,
+                        buf_paras,
+                        results,
+                        chunk_idx,
+                        overlap_start,
                         doc_id=doc_id,
                     )
-                    # Prepare overlap from just-flushed chunk
-                    prev_tail = self._get_tail(results[-1].text, overlap_chars)
+                    overlap_start = self._next_overlap_start(results[-1], overlap_chars)
                     buf_paras = []
                     buf_len = 0
 
@@ -212,17 +220,26 @@ class Chunker:
                     # Flush any accumulated
                     if buf_paras:
                         chunk_idx = self._flush_buf(
-                            doc, buf_paras, results, chunk_idx, prev_tail, cfg,
+                            doc,
+                            buf_paras,
+                            results,
+                            chunk_idx,
+                            overlap_start,
                             doc_id=doc_id,
                         )
-                        prev_tail = self._get_tail(results[-1].text, overlap_chars)
+                        overlap_start = self._next_overlap_start(results[-1], overlap_chars)
                         buf_paras = []
                         buf_len = 0
 
                     # Split long paragraph into sub-chunks
-                    chunk_idx, prev_tail = self._split_long_para(
-                        doc, pi, results, chunk_idx, prev_tail,
-                        effective_max, overlap_chars,
+                    chunk_idx, overlap_start = self._split_long_para(
+                        doc,
+                        pi,
+                        results,
+                        chunk_idx,
+                        overlap_start,
+                        effective_max,
+                        overlap_chars,
                         doc_id=doc_id,
                     )
                     continue
@@ -233,10 +250,14 @@ class Chunker:
             # Flush remaining in segment
             if buf_paras:
                 chunk_idx = self._flush_buf(
-                    doc, buf_paras, results, chunk_idx, prev_tail, cfg,
+                    doc,
+                    buf_paras,
+                    results,
+                    chunk_idx,
+                    overlap_start,
                     doc_id=doc_id,
                 )
-                prev_tail = self._get_tail(results[-1].text, overlap_chars)
+                overlap_start = self._next_overlap_start(results[-1], overlap_chars)
 
         return results
 
@@ -248,34 +269,44 @@ class Chunker:
         para_indices: list[int],
         results: list[ChunkResult],
         chunk_idx: int,
-        prev_tail: str,
-        cfg: ChunkConfig,
+        overlap_start: int | None,
         doc_id: str | None = None,
     ) -> int:
         paras = [doc.paragraphs[i] for i in para_indices]
-        body = "\n".join(p.text for p in paras)
-        if prev_tail:
-            text = prev_tail + "\n" + body
-        else:
-            text = body
-
         first = paras[0]
         last = paras[-1]
+        chunk_start = overlap_start if overlap_start is not None else first.start_char
+        chunk_end = last.end_char
+        start_para = Chunker._find_paragraph_index(doc, chunk_start)
+        chunk_text = doc.raw_text[chunk_start:chunk_end]
         results.append(
             ChunkResult(
                 chunk_index=chunk_idx,
-                text=text,
-                char_start=first.start_char,
-                char_end=last.end_char,
-                page_no=first.page_no,
-                paragraph_start=first.index,
+                text=chunk_text,
+                char_start=chunk_start,
+                char_end=chunk_end,
+                page_no=doc.paragraphs[start_para].page_no,
+                paragraph_start=start_para,
                 paragraph_end=last.index,
-                heading_path=first.heading_path,
-                token_estimate=_estimate_tokens(text),
+                heading_path=doc.paragraphs[start_para].heading_path,
+                token_estimate=_estimate_tokens(chunk_text),
                 doc_id=doc_id,
             )
         )
         return chunk_idx + 1
+
+    @staticmethod
+    def _find_paragraph_index(doc: ParsedDocument, char_pos: int) -> int:
+        for para in doc.paragraphs:
+            if char_pos <= para.end_char:
+                return para.index
+        return doc.paragraphs[-1].index
+
+    @staticmethod
+    def _next_overlap_start(chunk: ChunkResult, overlap_chars: int) -> int | None:
+        if overlap_chars <= 0:
+            return None
+        return max(chunk.char_start, chunk.char_end - overlap_chars)
 
     @staticmethod
     def _find_break_point(text: str, hard_end: int, search_back: int = 80) -> int:
@@ -304,19 +335,19 @@ class Chunker:
         para_idx: int,
         results: list[ChunkResult],
         chunk_idx: int,
-        prev_tail: str,
+        overlap_start: int | None,
         effective_max: int,
         overlap_chars: int,
         doc_id: str | None = None,
-    ) -> tuple[int, str]:
+    ) -> tuple[int, int | None]:
         para = doc.paragraphs[para_idx]
         text = para.text
         pos = 0
 
         while pos < len(text):
-            budget = effective_max
-            if prev_tail:
-                budget -= len(prev_tail) + 1
+            body_start = para.start_char + pos
+            chunk_start = overlap_start if overlap_start is not None else body_start
+            budget = effective_max - (body_start - chunk_start)
 
             hard_end = min(pos + budget, len(text))
             # Try to break at a natural sentence/clause boundary
@@ -325,16 +356,15 @@ class Chunker:
             if end <= pos:
                 end = hard_end
 
-            chunk_text = text[pos:end]
-            if prev_tail:
-                chunk_text = prev_tail + "\n" + chunk_text
+            chunk_end = para.start_char + end
+            chunk_text = doc.raw_text[chunk_start:chunk_end]
 
             results.append(
                 ChunkResult(
                     chunk_index=chunk_idx,
                     text=chunk_text,
-                    char_start=para.start_char + pos,
-                    char_end=para.start_char + end,
+                    char_start=chunk_start,
+                    char_end=chunk_end,
                     page_no=para.page_no,
                     paragraph_start=para.index,
                     paragraph_end=para.index,
@@ -344,13 +374,7 @@ class Chunker:
                 )
             )
             chunk_idx += 1
-            prev_tail = text[max(0, end - overlap_chars) : end]
+            overlap_start = Chunker._next_overlap_start(results[-1], overlap_chars)
             pos = end
 
-        return chunk_idx, prev_tail
-
-    @staticmethod
-    def _get_tail(text: str, n: int) -> str:
-        if n <= 0:
-            return ""
-        return text[-n:]
+        return chunk_idx, overlap_start

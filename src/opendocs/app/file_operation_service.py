@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Callable
 
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
 
 from opendocs.domain.models import AuditLogModel, FileOperationPlanModel
@@ -68,19 +69,14 @@ class FileOperationService:
                 self._operation_executor(plan)
             except Exception as exc:
                 fail_time = executed_at or utcnow_naive()
-                self._plans.update_status(plan_id, "failed")
-                fail_audit = AuditLogModel(
-                    audit_id=str(uuid.uuid4()),
-                    timestamp=fail_time,
+                self._persist_failure(
+                    plan=plan,
                     actor=actor,
-                    operation=f"{plan.operation_type}_execute",
-                    target_type="plan",
-                    target_id=plan.plan_id,
-                    result="failure",
-                    detail_json={**(detail_json or {}), "exec_error": str(exc)},
                     trace_id=trace_id,
+                    detail_json=detail_json,
+                    fail_time=fail_time,
+                    exec_error=str(exc),
                 )
-                self._audits.create(fail_audit)
                 raise FileOpFailedError(str(exc)) from exc
 
         execute_time = executed_at or utcnow_naive()
@@ -110,3 +106,53 @@ class FileOperationService:
         if plan is None:
             raise OpenDocsError(f"plan not found: {plan_id}")
         return plan
+
+    def _persist_failure(
+        self,
+        *,
+        plan: FileOperationPlanModel,
+        actor: str,
+        trace_id: str,
+        detail_json: dict[str, Any] | None,
+        fail_time: datetime,
+        exec_error: str,
+    ) -> None:
+        # Failure audit must survive the caller's default session_scope()
+        # rollback, so persist it in a fresh transaction after rolling back
+        # the current session.
+        self._session.rollback()
+        bind = self._resolve_engine()
+        with Session(bind, expire_on_commit=False) as failure_session:
+            failure_plans = PlanRepository(failure_session)
+            failure_audits = AuditRepository(failure_session)
+            failed_plan = failure_plans.get_by_id(plan.plan_id)
+            if failed_plan is None:
+                raise OpenDocsError(f"plan not found after rollback: {plan.plan_id}")
+
+            failed_plan.status = "failed"
+            failed_plan.executed_at = fail_time
+            if failed_plan.approved_at is None and plan.approved_at is not None:
+                failed_plan.approved_at = plan.approved_at
+
+            failure_audits.create(
+                AuditLogModel(
+                    audit_id=str(uuid.uuid4()),
+                    timestamp=fail_time,
+                    actor=actor,
+                    operation=f"{plan.operation_type}_execute",
+                    target_type="plan",
+                    target_id=plan.plan_id,
+                    result="failure",
+                    detail_json={**(detail_json or {}), "exec_error": exec_error},
+                    trace_id=trace_id,
+                )
+            )
+            failure_session.commit()
+
+    def _resolve_engine(self) -> Engine:
+        bind = self._session.get_bind()
+        if bind is None:
+            raise OpenDocsError("session is not bound to an engine")
+        if isinstance(bind, Connection):
+            return bind.engine
+        return bind

@@ -100,9 +100,7 @@ class PdfParser(BaseParser):
             try:
                 extraction = _try_pypdf(file_path)
             except ImportError as exc:
-                raise ParseFailedError(
-                    "Neither PyMuPDF nor pypdf is installed"
-                ) from exc
+                raise ParseFailedError("Neither PyMuPDF nor pypdf is installed") from exc
             except Exception as exc:
                 raise ParseFailedError(f"pypdf failed: {exc}") from exc
         except Exception as exc:

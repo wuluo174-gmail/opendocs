@@ -44,7 +44,7 @@ class ParsedDocument(BaseModel):
     """Unified parsing result for all document types."""
 
     file_path: str
-    file_type: Literal["txt", "md", "docx", "pdf"]
+    file_type: Literal["txt", "md", "docx", "pdf", "unsupported"]
     raw_text: str
     title: str | None = None
     parse_status: Literal["success", "partial", "failed"] = "success"
@@ -107,18 +107,13 @@ class ParserRegistry:
         ext = file_path.suffix.lower()
 
         # Determine file_type for the result
-        ext_to_type: dict[str, Literal["txt", "md", "docx", "pdf"]] = {
+        ext_to_type: dict[str, Literal["txt", "md", "docx", "pdf", "unsupported"]] = {
             ".txt": "txt",
             ".md": "md",
             ".docx": "docx",
             ".pdf": "pdf",
         }
-        # NOTE: For unsupported extensions (e.g. ".doc"), file_type falls back
-        # to "txt" because the Literal constraint only allows txt/md/docx/pdf.
-        # This is acceptable: the result will have parse_status="failed" and
-        # error_info carrying the actual extension, so downstream code should
-        # check parse_status first rather than relying on file_type alone.
-        file_type = ext_to_type.get(ext, "txt")
+        file_type = ext_to_type.get(ext, "unsupported")
 
         def _failed(error_info: str) -> ParsedDocument:
             return ParsedDocument(
@@ -135,16 +130,11 @@ class ParserRegistry:
             logger.warning("Unsupported format: %s", ext)
             return _failed(f"unsupported format: {ext}")
 
-        # Empty file – return success with no paragraphs (consistent with
-        # individual parsers which treat empty input as a valid edge case).
+        # Acceptance TC-002 treats empty files as problematic inputs that
+        # must surface in the failure bucket, not as successful parses.
         try:
             if file_path.stat().st_size == 0:
-                return ParsedDocument(
-                    file_path=str(file_path),
-                    file_type=file_type,
-                    raw_text="",
-                    parse_status="success",
-                )
+                return _failed("empty file")
         except PermissionError:
             return _failed("permission denied")
         except OSError as exc:

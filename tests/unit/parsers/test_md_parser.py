@@ -33,8 +33,7 @@ class TestMdParser:
         result = self.parser.parse(tmp_md)
         # Find the subsection A content paragraph
         subsec_paras = [
-            p for p in result.paragraphs
-            if p.heading_path and "Subsection A" in p.heading_path
+            p for p in result.paragraphs if p.heading_path and "Subsection A" in p.heading_path
         ]
         assert len(subsec_paras) > 0
         # heading_path should include parent
@@ -46,8 +45,7 @@ class TestMdParser:
     def test_section_two_resets_subsection(self, tmp_md: Path) -> None:
         result = self.parser.parse(tmp_md)
         sec2_paras = [
-            p for p in result.paragraphs
-            if p.heading_path and "Section Two" in p.heading_path
+            p for p in result.paragraphs if p.heading_path and "Section Two" in p.heading_path
         ]
         assert len(sec2_paras) > 0
         # Section Two should NOT include Subsection A
@@ -96,30 +94,18 @@ class TestMdParser:
         p.write_text(content, encoding="utf-8")
         result = self.parser.parse(p)
         # The heading paths should only contain "Real Title"
-        heading_paths = {
-            para.heading_path for para in result.paragraphs if para.heading_path
-        }
+        heading_paths = {para.heading_path for para in result.paragraphs if para.heading_path}
         for hp in heading_paths:
             assert "comment" not in hp.lower()
             assert "Real Title" in hp
 
     def test_tilde_fence_code_block(self, tmp_path: Path) -> None:
         """Tilde-fenced code blocks should also be handled."""
-        content = (
-            "# Title\n"
-            "\n"
-            "~~~\n"
-            "# not a heading\n"
-            "~~~\n"
-            "\n"
-            "After.\n"
-        )
+        content = "# Title\n\n~~~\n# not a heading\n~~~\n\nAfter.\n"
         p = tmp_path / "tilde.md"
         p.write_text(content, encoding="utf-8")
         result = self.parser.parse(p)
-        heading_paths = {
-            para.heading_path for para in result.paragraphs if para.heading_path
-        }
+        heading_paths = {para.heading_path for para in result.paragraphs if para.heading_path}
         for hp in heading_paths:
             assert "not a heading" not in hp
 
@@ -129,9 +115,7 @@ class TestMdParser:
         for para in result.paragraphs:
             stripped = para.text.strip()
             if stripped:
-                assert not stripped.startswith("# "), (
-                    f"Heading leaked raw markdown: '{para.text}'"
-                )
+                assert not stripped.startswith("# "), f"Heading leaked raw markdown: '{para.text}'"
                 assert not stripped.startswith("## ")
                 assert not stripped.startswith("### ")
 
@@ -149,23 +133,11 @@ class TestMdParser:
 
     def test_long_fence_not_closed_by_short(self, tmp_path: Path) -> None:
         """A ````` (5-backtick) fence must NOT be closed by ``` (3-backtick)."""
-        content = (
-            "# Title\n"
-            "\n"
-            "`````\n"
-            "```\n"
-            "# not a heading\n"
-            "```\n"
-            "`````\n"
-            "\n"
-            "After.\n"
-        )
+        content = "# Title\n\n`````\n```\n# not a heading\n```\n`````\n\nAfter.\n"
         p = tmp_path / "longfence.md"
         p.write_text(content, encoding="utf-8")
         result = self.parser.parse(p)
-        heading_paths = {
-            para.heading_path for para in result.paragraphs if para.heading_path
-        }
+        heading_paths = {para.heading_path for para in result.paragraphs if para.heading_path}
         for hp in heading_paths:
             assert "not a heading" not in hp
 
@@ -217,31 +189,16 @@ class TestMdParser:
 
     def test_setext_h1(self, tmp_path: Path) -> None:
         """Setext H1 (===) must be recognized as a heading."""
-        content = (
-            "My Title\n"
-            "========\n"
-            "\n"
-            "Body text.\n"
-        )
+        content = "My Title\n========\n\nBody text.\n"
         p = tmp_path / "setext_h1.md"
         p.write_text(content, encoding="utf-8")
         result = self.parser.parse(p)
         assert result.title == "My Title"
-        assert any(
-            pp.heading_path and "My Title" in pp.heading_path
-            for pp in result.paragraphs
-        )
+        assert any(pp.heading_path and "My Title" in pp.heading_path for pp in result.paragraphs)
 
     def test_setext_h2(self, tmp_path: Path) -> None:
         """Setext H2 (---) must be recognized as a heading."""
-        content = (
-            "# Top\n"
-            "\n"
-            "Subtitle\n"
-            "--------\n"
-            "\n"
-            "Body.\n"
-        )
+        content = "# Top\n\nSubtitle\n--------\n\nBody.\n"
         p = tmp_path / "setext_h2.md"
         p.write_text(content, encoding="utf-8")
         result = self.parser.parse(p)
@@ -250,13 +207,7 @@ class TestMdParser:
 
     def test_atx_trailing_hashes_stripped(self, tmp_path: Path) -> None:
         """Trailing ## in ATX headings must be removed."""
-        content = (
-            "# Title ##\n"
-            "\n"
-            "## Section ##\n"
-            "\n"
-            "Content.\n"
-        )
+        content = "# Title ##\n\n## Section ##\n\nContent.\n"
         p = tmp_path / "trailing_hash.md"
         p.write_text(content, encoding="utf-8")
         result = self.parser.parse(p)

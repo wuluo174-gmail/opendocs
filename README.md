@@ -29,6 +29,7 @@ python scripts/bootstrap_dev.py
 ```
 
 该脚本只会安装 `requirements.lock` 中锁定的第三方依赖，并把当前仓库作为本地 editable 包安装；不会再从远端仓库拉取 `opendocs` 自身代码。
+`bootstrap_dev.py` 会校验当前基线的 Python 与安装流程，并额外验证 `hnswlib` 可导入，避免锁定技术栈在 S0 就静默漂移。
 
 如需直接执行主规范中的安装验证命令，请使用 Python 3.11：
 
@@ -125,3 +126,4 @@ opendocs/
 3. 日志位置：默认在用户数据目录下的 `logs/app.log`。
 4. 凭据管理：按阶段计划，keyring 集成在 S10 实现，S0/S1 不提供 Provider 密钥管理接口。
 5. 若当前 `python` 不是 3.11：`bootstrap_dev.py` 会在 Windows 上尝试委托给 `py -3.11`；若本机没有可用 3.11，则脚本会失败并提示先安装 Python 3.11。
+6. `.doc` 等不支持格式会被明确标记为 `unsupported format`，不会伪装成 `txt` 解析结果。

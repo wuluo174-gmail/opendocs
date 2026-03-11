@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+_LOCKED_IMPORT_CHECKS = ("hnswlib",)
+
 
 def _run(cmd: list[str]) -> int:
     completed = subprocess.run(cmd, check=False)
@@ -57,7 +59,7 @@ def _delegate_to_python311_if_needed(argv: list[str]) -> int | None:
             print("[bootstrap] locked baseline requires Python 3.11; delegating to `py -3.11`.")
             return _run(cmd)
 
-    print("[bootstrap] failed: locked baseline requires Python 3.11 + hnswlib.")
+    print("[bootstrap] failed: locked baseline requires Python 3.11.")
     print("[bootstrap] install Python 3.11 and rerun this script.")
     return 1
 
@@ -95,10 +97,14 @@ def _install_locked_dependencies() -> int:
         print(f"[bootstrap] failed: {' '.join(install_editable_cmd)}")
         return 1
 
-    verify_hnswlib_cmd = [sys.executable, "-c", "import hnswlib"]
-    if _run(verify_hnswlib_cmd) != 0:
-        print("[bootstrap] failed: hnswlib import check failed.")
-        return 1
+    print("[bootstrap] verifying locked runtime modules...")
+    for module_name in _LOCKED_IMPORT_CHECKS:
+        import_check_cmd = [sys.executable, "-c", f"import {module_name}"]
+        if _run(import_check_cmd) != 0:
+            print(
+                f"[bootstrap] failed: locked runtime module import check failed for '{module_name}'"
+            )
+            return 1
 
     print("[bootstrap] success")
     print("[bootstrap] next commands:")

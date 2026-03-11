@@ -48,11 +48,13 @@ def _fullwidth_to_halfwidth(text: str) -> str:
     result: list[str] = []
     for ch in text:
         cp = ord(ch)
-        if (0xFF10 <= cp <= 0xFF19       # ０-９ → 0-9
-                or 0xFF21 <= cp <= 0xFF3A  # Ａ-Ｚ → A-Z
-                or 0xFF41 <= cp <= 0xFF5A):  # ａ-ｚ → a-z
+        if (
+            0xFF10 <= cp <= 0xFF19  # ０-９ → 0-9
+            or 0xFF21 <= cp <= 0xFF3A  # Ａ-Ｚ → A-Z
+            or 0xFF41 <= cp <= 0xFF5A
+        ):  # ａ-ｚ → a-z
             result.append(chr(cp - 0xFEE0))
-        elif cp == 0x3000:               # full-width space
+        elif cp == 0x3000:  # full-width space
             result.append(" ")
         else:
             result.append(ch)

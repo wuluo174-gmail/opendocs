@@ -48,17 +48,20 @@ class TestFailureIsolation:
         p.write_text("hello")
         result = registry.parse(p)
         assert result.parse_status == "failed"
+        assert result.file_type == "unsupported"
         assert "unsupported format" in result.error_info
 
-    def test_empty_file_returns_success(self, tmp_path: Path) -> None:
-        """Empty file returns success with no content – consistent with parsers."""
+    def test_empty_file_returns_failed(self, tmp_path: Path) -> None:
+        """TC-002: empty files should surface in the failure bucket."""
         registry = create_default_registry()
         p = tmp_path / "empty.txt"
         p.write_text("")
         result = registry.parse(p)
-        assert result.parse_status == "success"
+        assert result.parse_status == "failed"
+        assert result.file_type == "txt"
         assert result.raw_text == ""
         assert result.paragraphs == []
+        assert result.error_info == "empty file"
 
     def test_missing_file_no_exception(self, tmp_path: Path) -> None:
         registry = create_default_registry()
@@ -101,6 +104,7 @@ class TestFailureIsolation:
         p.write_bytes(b"\xd0\xcf\x11\xe0")  # OLE magic bytes
         result = registry.parse(p)
         assert result.parse_status == "failed"
+        assert result.file_type == "unsupported"
         assert "unsupported format" in result.error_info
 
     def test_batch_processing_never_crashes(self, tmp_path: Path) -> None:
@@ -126,6 +130,8 @@ class TestFailureIsolation:
         assert results[1].parse_status == "failed"
         assert results[2].parse_status == "failed"
         assert results[3].parse_status == "failed"  # .doc rejected
+        assert results[2].file_type == "unsupported"
+        assert results[3].file_type == "unsupported"
 
     def test_normalization_applied(self, tmp_path: Path) -> None:
         """Registry.parse() must apply text normalization."""
@@ -254,7 +260,7 @@ class TestParserChunkerIntegration:
         assert len(chunks) >= 1
         for c in chunks:
             assert 0 <= c.char_start <= c.char_end <= len(parsed.raw_text)
-            located = parsed.raw_text[c.char_start:c.char_end]
+            located = parsed.raw_text[c.char_start : c.char_end]
             assert located in c.text
         # heading_path should propagate from docx styles
         headings = [c.heading_path for c in chunks if c.heading_path]
@@ -269,7 +275,7 @@ class TestParserChunkerIntegration:
         assert len(chunks) >= 1
         for c in chunks:
             assert 0 <= c.char_start <= c.char_end <= len(parsed.raw_text)
-            located = parsed.raw_text[c.char_start:c.char_end]
+            located = parsed.raw_text[c.char_start : c.char_end]
             assert located in c.text
         # page_no should be preserved from PDF paragraphs
         page_nos = [c.page_no for c in chunks if c.page_no is not None]

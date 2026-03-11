@@ -106,13 +106,11 @@
 - **建议解决时机**：S4（证据定位）或 S9（UI 引用跳转）
 - **建议方案**：在 `ParserRegistry.parse()` 中保留原始偏移映射（`original_start_char` / `original_end_char`），或在证据定位层做二次映射。
 
-### DEBT-02：overlap 导致 chunk.text 与 char_start:char_end 不对称
+### DEBT-02：overlap 与 locator 不一致
 
-- **关联**：§8.3、S3 FTS 索引
-- **现状**：有重叠时，`chunk.text = overlap_prefix + "\n" + new_content`，但 `char_start:char_end` 只覆盖 new_content。`doc.raw_text[char_start:char_end] ≠ chunk.text`。
-- **影响**：S3 构建 FTS 索引时，若直接用 `chunk.text`，重叠文本会被重复索引，影响 FTS 评分权重。
-- **建议解决时机**：S3（FTS 写入时决定索引 text 还是 body-only text）
-- **建议方案**：S3 写入 FTS 时使用 `doc.raw_text[chunk.char_start:chunk.char_end]` 作为索引文本，`chunk.text` 仅用于向量嵌入和展示。
+- **状态**：2026-03-11 已修复
+- **处理结果**：`ChunkResult.text` 已改为严格对应 `doc.raw_text[char_start:char_end]` 的源文本切片；重叠仍保留，但通过扩展源区间表达，不再依赖“前缀拼接 + locator 仅指向正文”的不一致表示。
+- **后续关注**：S3 仍需决定 FTS / 向量索引是否都直接使用 `chunk.text`，但 chunk 本身的定位契约已经闭合。
 
 ---
 

@@ -115,7 +115,21 @@ class ChunkModel(Base):
     __table_args__ = (
         UniqueConstraint("doc_id", "chunk_index", name="uq_chunks_doc_index"),
         CheckConstraint("chunk_index >= 0", name="ck_chunks_chunk_index_non_negative"),
+        CheckConstraint("char_start >= 0", name="ck_chunks_char_start_non_negative"),
         CheckConstraint("char_end >= char_start", name="ck_chunks_char_range"),
+        CheckConstraint("page_no IS NULL OR page_no >= 1", name="ck_chunks_page_no_positive"),
+        CheckConstraint(
+            "paragraph_start IS NULL OR paragraph_start >= 0",
+            name="ck_chunks_paragraph_start_non_negative",
+        ),
+        CheckConstraint(
+            "paragraph_end IS NULL OR paragraph_end >= 0",
+            name="ck_chunks_paragraph_end_non_negative",
+        ),
+        CheckConstraint(
+            "paragraph_start IS NULL OR paragraph_end IS NULL OR paragraph_end >= paragraph_start",
+            name="ck_chunks_paragraph_range",
+        ),
         CheckConstraint(_uuid_check_sql("chunk_id"), name="ck_chunks_chunk_id_uuid"),
         CheckConstraint(_uuid_check_sql("doc_id"), name="ck_chunks_doc_id_uuid"),
     )
