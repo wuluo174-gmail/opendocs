@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from opendocs.exceptions import ParseFailedError
-from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument
+from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument, ParseError
 
 _HEADING_STYLE_RE = re.compile(r"^Heading\s*(\d+)$", re.IGNORECASE)
 
@@ -154,12 +154,31 @@ class DocxParser(BaseParser):
         if failed_tables:
             failure_messages.append(f"failed table blocks: {failed_tables}")
 
+        error: ParseError | None = None
         if failure_messages and not entries:
             parse_status = "failed"
             error_info = "; ".join(failure_messages)
+            error = ParseError(
+                code="parse_failed",
+                message=error_info,
+                details={
+                    "parser": "DocxParser",
+                    "failed_paragraph_indices": failed_paras,
+                    "failed_table_blocks": failed_tables,
+                },
+            )
         elif failure_messages:
             parse_status = "partial"
             error_info = "; ".join(failure_messages)
+            error = ParseError(
+                code="partial_parse",
+                message=error_info,
+                details={
+                    "parser": "DocxParser",
+                    "failed_paragraph_indices": failed_paras,
+                    "failed_table_blocks": failed_tables,
+                },
+            )
         else:
             parse_status = "success"
             error_info = None
@@ -172,4 +191,5 @@ class DocxParser(BaseParser):
             paragraphs=paragraphs,
             parse_status=parse_status,
             error_info=error_info,
+            error=error,
         )

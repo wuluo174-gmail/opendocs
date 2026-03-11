@@ -60,31 +60,28 @@ class FileOperationService:
         if plan.status != "approved":
             raise PlanNotApprovedError("plan must be approved before execution")
 
-        execution_mode = "real"
         if self._operation_executor is None:
-            # No executor configured — auto-enter simulation mode (S1 baseline).
-            execution_mode = "simulated"
-        else:
-            try:
-                self._operation_executor(plan)
-            except Exception as exc:
-                fail_time = executed_at or utcnow_naive()
-                self._persist_failure(
-                    plan=plan,
-                    actor=actor,
-                    trace_id=trace_id,
-                    detail_json=detail_json,
-                    fail_time=fail_time,
-                    exec_error=str(exc),
-                )
-                raise FileOpFailedError(str(exc)) from exc
+            raise FileOpFailedError("operation executor is not configured")
+
+        try:
+            self._operation_executor(plan)
+        except Exception as exc:
+            fail_time = executed_at or utcnow_naive()
+            self._persist_failure(
+                plan=plan,
+                actor=actor,
+                trace_id=trace_id,
+                detail_json=detail_json,
+                fail_time=fail_time,
+                exec_error=str(exc),
+            )
+            raise FileOpFailedError(str(exc)) from exc
 
         execute_time = executed_at or utcnow_naive()
         self._plans.update_status(plan_id, "executed", executed_at=execute_time, _internal=True)
 
         audit_detail = dict(detail_json or {})
-        audit_detail["execution_mode"] = execution_mode
-        audit_detail["simulated"] = execution_mode == "simulated"
+        audit_detail["execution_mode"] = "real"
 
         audit = AuditLogModel(
             audit_id=str(uuid.uuid4()),

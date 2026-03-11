@@ -251,7 +251,7 @@ stages:
   - 注意 SQLite FTS5 与常规表同步策略
 - id: S2
   name: 解析器与切片器
-  status: pending
+  status: completed
   depends_on:
   - S1
   objective: 支持 txt、md、docx、文字层 pdf 解析，并输出统一 ParsedDocument 与标准 chunk。

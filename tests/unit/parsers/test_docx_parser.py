@@ -184,6 +184,8 @@ class TestDocxParser:
         assert result.parse_status == "partial"
         assert result.error_info is not None
         assert "2" in result.error_info
+        assert result.error is not None
+        assert result.error.code == "partial_parse"
         assert len(result.paragraphs) == 2
         # Offsets valid
         for para in result.paragraphs:
@@ -207,5 +209,8 @@ class TestDocxParser:
         assert result.parse_status == "partial"
         assert result.error_info is not None
         assert "failed table blocks" in result.error_info
+        assert result.error is not None
+        assert result.error.code == "partial_parse"
+        assert result.error.details["parser"] == "DocxParser"
         assert "Intro text." in result.raw_text
         assert "Closing text." in result.raw_text

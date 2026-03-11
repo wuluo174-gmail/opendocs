@@ -125,6 +125,28 @@ class TestChunkerParagraphBoundary:
         assert chunks[0].paragraph_start == 0
         assert chunks[0].paragraph_end == 1
 
+    def test_overlap_starting_on_paragraph_separator_uses_next_paragraph(self) -> None:
+        paras = [
+            Paragraph(text="A" * 100, index=0, start_char=0, end_char=100),
+            Paragraph(text="B" * 107, index=1, start_char=101, end_char=208),
+            Paragraph(text="C" * 700, index=2, start_char=209, end_char=909),
+        ]
+        doc = _make_doc(paras)
+        config = ChunkConfig(
+            max_chars=900,
+            max_chars_latin=900,
+            overlap_ratio=0.12,
+            min_chunk_chars=5,
+        )
+
+        chunks = Chunker().chunk(doc, config)
+
+        assert len(chunks) == 2
+        assert chunks[1].char_start == 100
+        assert chunks[1].text.startswith("\n" + ("B" * 4))
+        assert chunks[1].paragraph_start == 1
+        assert chunks[1].paragraph_end == 2
+
 
 class TestChunkerHeadingBoundary:
     def test_heading_change_forces_split(self) -> None:

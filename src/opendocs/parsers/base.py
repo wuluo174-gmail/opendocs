@@ -6,9 +6,9 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from opendocs.exceptions import ParseFailedError, ParseUnsupportedError
 from opendocs.parsers.normalization import normalize_text
@@ -40,6 +40,14 @@ class Paragraph:
             raise ValueError(f"page_no must be >= 1, got {self.page_no}")
 
 
+class ParseError(BaseModel):
+    """Structured parse error payload for audit and retry classification."""
+
+    code: str
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
 class ParsedDocument(BaseModel):
     """Unified parsing result for all document types."""
 
@@ -49,10 +57,20 @@ class ParsedDocument(BaseModel):
     title: str | None = None
     parse_status: Literal["success", "partial", "failed"] = "success"
     error_info: str | None = None
+    error: ParseError | None = None
     paragraphs: list[Paragraph] = Field(default_factory=list)
     page_count: int | None = None
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @model_validator(mode="after")
+    def _sync_error_fields(self) -> "ParsedDocument":
+        if self.error is None and self.error_info:
+            default_code = "partial_parse" if self.parse_status == "partial" else "parse_failed"
+            self.error = ParseError(code=default_code, message=self.error_info)
+        elif self.error is not None and self.error_info is None:
+            self.error_info = self.error.message
+        return self
 
 
 class BaseParser(ABC):
@@ -115,42 +133,82 @@ class ParserRegistry:
         }
         file_type = ext_to_type.get(ext, "unsupported")
 
-        def _failed(error_info: str) -> ParsedDocument:
+        def _failed(error_code: str, error_info: str, **details: object) -> ParsedDocument:
             return ParsedDocument(
                 file_path=str(file_path),
                 file_type=file_type,
                 raw_text="",
                 parse_status="failed",
                 error_info=error_info,
+                error=ParseError(
+                    code=error_code,
+                    message=error_info,
+                    details={k: v for k, v in details.items() if v is not None},
+                ),
             )
 
         # Unsupported format
         parser = self.get_parser(file_path)
         if parser is None:
             logger.warning("Unsupported format: %s", ext)
-            return _failed(f"unsupported format: {ext}")
+            return _failed("unsupported_format", f"unsupported format: {ext}", extension=ext)
 
         # Acceptance TC-002 treats empty files as problematic inputs that
         # must surface in the failure bucket, not as successful parses.
         try:
             if file_path.stat().st_size == 0:
-                return _failed("empty file")
+                return _failed("empty_file", "empty file")
         except PermissionError:
-            return _failed("permission denied")
+            return _failed("permission_denied", "permission denied", operation="stat")
         except OSError as exc:
-            return _failed(str(exc))
+            return _failed(
+                "io_error",
+                str(exc),
+                operation="stat",
+                errno=exc.errno,
+                exception_type=type(exc).__name__,
+            )
 
         # Delegate to parser
         try:
             result = parser.parse(file_path)
-        except (ParseUnsupportedError, ParseFailedError) as exc:
+        except ParseUnsupportedError as exc:
             logger.warning("Parse error for %s: %s", file_path, exc)
-            return _failed(str(exc))
+            return _failed(
+                "parse_unsupported",
+                str(exc),
+                parser=parser.__class__.__name__,
+            )
+        except ParseFailedError as exc:
+            logger.warning("Parse error for %s: %s", file_path, exc)
+            return _failed(
+                "parse_failed",
+                str(exc),
+                parser=parser.__class__.__name__,
+            )
         except PermissionError:
-            return _failed("permission denied")
+            return _failed(
+                "permission_denied",
+                "permission denied",
+                operation="parse",
+                parser=parser.__class__.__name__,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Unexpected error parsing %s", file_path)
-            return _failed(f"unexpected error: {exc}")
+            return _failed(
+                "unexpected_error",
+                f"unexpected error: {exc}",
+                parser=parser.__class__.__name__,
+                exception_type=type(exc).__name__,
+            )
+
+        if result.error is None and result.error_info:
+            error_code = "partial_parse" if result.parse_status == "partial" else "parse_failed"
+            result.error = ParseError(
+                code=error_code,
+                message=result.error_info,
+                details={"parser": parser.__class__.__name__},
+            )
 
         # Apply text normalization (NFC, fullwidth→halfwidth, whitespace)
         # then recompute offsets so they match the normalized raw_text.
@@ -161,6 +219,10 @@ class ParserRegistry:
         # the exact position in the original file, an additional original-
         # offset mapping will be required.  Within S2 the offsets are
         # internally consistent (tested in TestNormalizationOffsetIntegrity).
+        if result.parse_status != "failed":
+            if result.title is not None:
+                result.title = normalize_text(result.title)
+
         if result.parse_status != "failed" and result.raw_text:
             # Normalize each paragraph text first
             for para in result.paragraphs:

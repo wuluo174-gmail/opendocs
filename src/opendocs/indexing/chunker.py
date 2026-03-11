@@ -298,7 +298,9 @@ class Chunker:
     @staticmethod
     def _find_paragraph_index(doc: ParsedDocument, char_pos: int) -> int:
         for para in doc.paragraphs:
-            if char_pos <= para.end_char:
+            if para.start_char <= char_pos < para.end_char:
+                return para.index
+            if char_pos < para.start_char:
                 return para.index
         return doc.paragraphs[-1].index
 

@@ -164,8 +164,39 @@ class TestPdfParser:
         assert result.parse_status == "partial"
         assert result.error_info is not None
         assert "2" in result.error_info
+        assert result.error is not None
+        assert result.error.code == "partial_parse"
+        assert result.error.details["failed_pages"] == [2]
         # Successfully parsed pages should still produce paragraphs
         assert len(result.paragraphs) >= 1
         # Offsets must remain valid
         for para in result.paragraphs:
             assert result.raw_text[para.start_char : para.end_char] == para.text
+
+    def test_fallback_to_pypdf_is_marked_partial_and_auditable(self, tmp_pdf: Path) -> None:
+        """S2-T01/T04: backend fallback must surface as a partial parse."""
+        from unittest.mock import patch
+
+        from opendocs.parsers.pdf_parser import _PdfExtraction
+
+        fake_extraction = _PdfExtraction(
+            pages=[(1, "Fallback title\n\nBody text.")],
+            title=None,
+            page_count=1,
+            failed_pages=[],
+            toc=[],
+        )
+
+        with patch("opendocs.parsers.pdf_parser._try_fitz", side_effect=RuntimeError("fitz boom")):
+            with patch("opendocs.parsers.pdf_parser._try_pypdf", return_value=fake_extraction):
+                result = self.parser.parse(tmp_pdf)
+
+        assert result.parse_status == "partial"
+        assert result.error_info is not None
+        assert "fell back to pypdf" in result.error_info
+        assert result.error is not None
+        assert result.error.code == "partial_parse"
+        assert result.error.details["failed_backend"] == "PyMuPDF"
+        assert result.error.details["fallback_backend"] == "pypdf"
+        assert result.error.details["degraded_fields"] == ["heading_path"]
+        assert result.title == "Fallback title"

@@ -50,6 +50,9 @@ class TestFailureIsolation:
         assert result.parse_status == "failed"
         assert result.file_type == "unsupported"
         assert "unsupported format" in result.error_info
+        assert result.error is not None
+        assert result.error.code == "unsupported_format"
+        assert result.error.details["extension"] == ".xyz"
 
     def test_empty_file_returns_failed(self, tmp_path: Path) -> None:
         """TC-002: empty files should surface in the failure bucket."""
@@ -62,6 +65,8 @@ class TestFailureIsolation:
         assert result.raw_text == ""
         assert result.paragraphs == []
         assert result.error_info == "empty file"
+        assert result.error is not None
+        assert result.error.code == "empty_file"
 
     def test_missing_file_no_exception(self, tmp_path: Path) -> None:
         registry = create_default_registry()
@@ -69,6 +74,8 @@ class TestFailureIsolation:
         result = registry.parse(p)
         assert result.parse_status == "failed"
         assert result.error_info is not None
+        assert result.error is not None
+        assert result.error.code == "io_error"
 
     def test_corrupted_docx_no_exception(self, tmp_path: Path) -> None:
         registry = create_default_registry()
@@ -77,6 +84,9 @@ class TestFailureIsolation:
         result = registry.parse(p)
         assert result.parse_status == "failed"
         assert result.error_info is not None
+        assert result.error is not None
+        assert result.error.code == "parse_failed"
+        assert result.error.details["parser"] == "DocxParser"
 
     def test_corrupted_pdf_no_exception(self, tmp_path: Path) -> None:
         registry = create_default_registry()
@@ -85,6 +95,9 @@ class TestFailureIsolation:
         result = registry.parse(p)
         assert result.parse_status == "failed"
         assert result.error_info is not None
+        assert result.error is not None
+        assert result.error.code == "parse_failed"
+        assert result.error.details["parser"] == "PdfParser"
 
     def test_permission_denied_no_exception(self, tmp_path: Path) -> None:
         registry = create_default_registry()
@@ -94,6 +107,7 @@ class TestFailureIsolation:
         try:
             result = registry.parse(p)
             assert result.parse_status == "failed"
+            assert result.error is not None
         finally:
             p.chmod(0o644)
 
@@ -106,6 +120,8 @@ class TestFailureIsolation:
         assert result.parse_status == "failed"
         assert result.file_type == "unsupported"
         assert "unsupported format" in result.error_info
+        assert result.error is not None
+        assert result.error.code == "unsupported_format"
 
     def test_batch_processing_never_crashes(self, tmp_path: Path) -> None:
         """Simulate batch: mix of good, bad, and unsupported files."""
@@ -132,6 +148,9 @@ class TestFailureIsolation:
         assert results[3].parse_status == "failed"  # .doc rejected
         assert results[2].file_type == "unsupported"
         assert results[3].file_type == "unsupported"
+        assert results[1].error is not None
+        assert results[2].error is not None
+        assert results[3].error is not None
 
     def test_normalization_applied(self, tmp_path: Path) -> None:
         """Registry.parse() must apply text normalization."""
@@ -144,6 +163,7 @@ class TestFailureIsolation:
         # Full-width chars should be normalized to half-width
         assert "ABC" in result.raw_text
         assert "\u3000" not in result.raw_text
+        assert result.title == "ABC 标题"
         for para in result.paragraphs:
             assert "Ａ" not in para.text
 

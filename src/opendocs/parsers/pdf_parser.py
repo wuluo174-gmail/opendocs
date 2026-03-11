@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 from opendocs.exceptions import ParseFailedError
-from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument
+from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument, ParseError
 
 logger = logging.getLogger(__name__)
 
@@ -92,21 +92,43 @@ class PdfParser(BaseParser):
 
     def parse(self, file_path: Path) -> ParsedDocument:
         extraction: _PdfExtraction
-        fitz_err: Exception | None = None
+        fallback_details: dict[str, object] | None = None
+        fallback_message: str | None = None
 
         try:
             extraction = _try_fitz(file_path)
-        except ImportError:
+        except ImportError as exc:
             try:
                 extraction = _try_pypdf(file_path)
+                fallback_message = (
+                    "PyMuPDF unavailable; fell back to pypdf and heading_path "
+                    "(TOC bookmarks) is unavailable"
+                )
+                fallback_details = {
+                    "parser": "PdfParser",
+                    "failed_backend": "PyMuPDF",
+                    "fallback_backend": "pypdf",
+                    "fitz_error": str(exc),
+                    "degraded_fields": ["heading_path"],
+                }
             except ImportError as exc:
                 raise ParseFailedError("Neither PyMuPDF nor pypdf is installed") from exc
             except Exception as exc:
                 raise ParseFailedError(f"pypdf failed: {exc}") from exc
         except Exception as exc:
-            fitz_err = exc
             try:
                 extraction = _try_pypdf(file_path)
+                fallback_message = (
+                    "PyMuPDF failed; fell back to pypdf and heading_path "
+                    "(TOC bookmarks) is unavailable"
+                )
+                fallback_details = {
+                    "parser": "PdfParser",
+                    "failed_backend": "PyMuPDF",
+                    "fallback_backend": "pypdf",
+                    "fitz_error": str(exc),
+                    "degraded_fields": ["heading_path"],
+                }
                 logger.warning(
                     "PyMuPDF failed for %s, fell back to pypdf; "
                     "heading_path (TOC bookmarks) will not be available",
@@ -114,7 +136,7 @@ class PdfParser(BaseParser):
                 )
             except Exception as pypdf_exc:
                 raise ParseFailedError(
-                    f"PDF extraction failed: fitz={fitz_err}, pypdf={pypdf_exc}"
+                    f"PDF extraction failed: fitz={exc}, pypdf={pypdf_exc}"
                 ) from pypdf_exc
 
         # Build a page→heading_path lookup from TOC entries
@@ -181,15 +203,48 @@ class PdfParser(BaseParser):
         # Determine parse status
         failed_pages = extraction.failed_pages
         parse_status: Literal["success", "partial", "failed"]
+        error: ParseError | None = None
         if failed_pages and not extraction.pages:
             parse_status = "failed"
             error_info = f"all pages failed: {failed_pages}"
+            error = ParseError(
+                code="parse_failed",
+                message=error_info,
+                details={"parser": "PdfParser", "failed_pages": failed_pages},
+            )
         elif failed_pages:
             parse_status = "partial"
             error_info = f"failed pages: {failed_pages}"
+            error = ParseError(
+                code="partial_parse",
+                message=error_info,
+                details={"parser": "PdfParser", "failed_pages": failed_pages},
+            )
         else:
             parse_status = "success"
             error_info = None
+
+        if fallback_details is not None and fallback_message is not None:
+            if error_info is None:
+                error_info = fallback_message
+            else:
+                error_info = f"{error_info}; {fallback_message}"
+
+            if error is None:
+                error = ParseError(
+                    code="partial_parse",
+                    message=error_info,
+                    details=fallback_details,
+                )
+            else:
+                error = ParseError(
+                    code=error.code,
+                    message=error_info,
+                    details={**error.details, **fallback_details},
+                )
+
+            if parse_status == "success":
+                parse_status = "partial"
 
         return ParsedDocument(
             file_path=str(file_path),
@@ -200,4 +255,5 @@ class PdfParser(BaseParser):
             page_count=extraction.page_count,
             parse_status=parse_status,
             error_info=error_info,
+            error=error,
         )

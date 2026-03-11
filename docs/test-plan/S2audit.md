@@ -185,6 +185,22 @@ $ python -m pytest tests/ -v
 
 ---
 
+## 四次审查修复（2026-03-11）
+
+### 问题 #12：解析失败缺少结构化错误对象
+
+- **严重度**：中
+- **文件**：`src/opendocs/parsers/base.py`
+- **问题**：`ParsedDocument` 只有 `error_info` 字符串，S3 以后若要区分 `unsupported_format`、`permission_denied`、`partial_parse` 等失败类型，只能做脆弱的字符串匹配，无法满足 S2-T01“解析失败能返回可审计错误对象”的要求。
+- **修复**：新增 `ParseError` 结构，统一提供 `code / message / details`；`ParserRegistry` 对失败路径填充结构化错误，`DocxParser` 和 `PdfParser` 对 `partial` / `failed` 结果显式写入结构化错误。
+- **新增测试**：
+  - `tests/unit/parsers/test_registry.py`：校验 `unsupported_format / empty_file / io_error / parse_failed`
+  - `tests/unit/parsers/test_docx_parser.py`：校验 `partial_parse`
+  - `tests/unit/parsers/test_pdf_parser.py`：校验 `partial_parse`
+- **状态**：✅ 已修复，测试通过
+
+---
+
 ## 修改文件清单（首次审查）
 
 | 文件 | 变更类型 |

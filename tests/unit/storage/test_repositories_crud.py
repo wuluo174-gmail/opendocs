@@ -439,7 +439,7 @@ def test_plan_repository_crud(engine: Engine) -> None:
         ):
             repository.update_status(plan.plan_id, "executed")
 
-        service = FileOperationService(session)
+        service = FileOperationService(session, operation_executor=lambda _plan: None)
         executed, _audit = service.execute_plan(
             plan.plan_id,
             actor="system",

@@ -54,7 +54,7 @@ def test_execute_plan_marks_executed_and_writes_audit(engine: Engine) -> None:
         repository.create(plan)
         session.commit()
 
-        service = FileOperationService(session)
+        service = FileOperationService(session, operation_executor=lambda _plan: None)
         approved = service.approve_plan(plan.plan_id)
         assert approved.status == "approved"
         assert approved.approved_at is not None
@@ -77,8 +77,8 @@ def test_execute_plan_marks_executed_and_writes_audit(engine: Engine) -> None:
         assert stored_audit is not None
         assert stored_audit.trace_id == "trace-approved-execute"
         assert stored_audit.detail_json["item_count"] == 1
-        assert stored_audit.detail_json["execution_mode"] == "simulated"
-        assert stored_audit.detail_json["simulated"] is True
+        assert stored_audit.detail_json["execution_mode"] == "real"
+        assert "simulated" not in stored_audit.detail_json
 
 
 def test_approve_plan_requires_draft_status(engine: Engine) -> None:
@@ -96,8 +96,8 @@ def test_approve_plan_requires_draft_status(engine: Engine) -> None:
             service.approve_plan(plan.plan_id)
 
 
-def test_execute_plan_without_executor_auto_simulates(engine: Engine) -> None:
-    """When no executor is configured, execute_plan auto-enters simulation mode."""
+def test_execute_plan_without_executor_keeps_plan_approved(engine: Engine) -> None:
+    """Missing executor must not mark the plan as executed."""
     with Session(engine) as session:
         repository = PlanRepository(session)
         plan = _draft_plan()
@@ -108,16 +108,17 @@ def test_execute_plan_without_executor_auto_simulates(engine: Engine) -> None:
         service.approve_plan(plan.plan_id)
         session.commit()
 
-        executed, audit = service.execute_plan(
-            plan.plan_id,
-            actor="system",
-            trace_id="trace-auto-simulate",
-        )
-        session.commit()
+        with pytest.raises(FileOpFailedError, match="not configured"):
+            service.execute_plan(
+                plan.plan_id,
+                actor="system",
+                trace_id="trace-missing-executor",
+            )
 
-        assert executed.status == "executed"
-        assert audit.detail_json["execution_mode"] == "simulated"
-        assert audit.detail_json["simulated"] is True
+        refreshed = repository.get_by_id(plan.plan_id)
+        assert refreshed is not None
+        assert refreshed.status == "approved"
+        assert session.scalars(select(AuditLogModel)).all() == []
 
 
 def test_executed_plan_cannot_be_re_executed(engine: Engine) -> None:
@@ -128,7 +129,7 @@ def test_executed_plan_cannot_be_re_executed(engine: Engine) -> None:
         repository.create(plan)
         session.commit()
 
-        service = FileOperationService(session)
+        service = FileOperationService(session, operation_executor=lambda _plan: None)
         service.approve_plan(plan.plan_id)
         service.execute_plan(
             plan.plan_id,
