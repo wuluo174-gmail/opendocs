@@ -78,7 +78,9 @@ class FileOperationService:
             raise FileOpFailedError(str(exc)) from exc
 
         execute_time = executed_at or utcnow_naive()
-        self._plans.update_status(plan_id, "executed", executed_at=execute_time, _internal=True)
+        plan.status = "executed"
+        plan.executed_at = execute_time
+        self._session.flush()
 
         audit_detail = dict(detail_json or {})
         audit_detail["execution_mode"] = "real"
@@ -96,7 +98,7 @@ class FileOperationService:
         )
         self._audits.create(audit)
 
-        return self._require_plan(plan_id), audit
+        return plan, audit
 
     def _require_plan(self, plan_id: str) -> FileOperationPlanModel:
         plan = self._plans.get_by_id(plan_id)

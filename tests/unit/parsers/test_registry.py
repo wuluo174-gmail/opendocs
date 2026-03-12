@@ -11,6 +11,12 @@ from opendocs.parsers import create_default_registry
 from opendocs.parsers.base import Paragraph, ParserRegistry
 from opendocs.parsers.txt_parser import TxtParser
 
+TEST_DOC_ID = "22222222-2222-4222-8222-222222222222"
+
+
+def _chunk(parsed, *, doc_id: str = TEST_DOC_ID):
+    return Chunker().chunk(parsed, doc_id=doc_id)
+
 
 class TestParserRegistry:
     def test_register_and_lookup(self) -> None:
@@ -167,6 +173,18 @@ class TestFailureIsolation:
         for para in result.paragraphs:
             assert "Ａ" not in para.text
 
+    def test_heading_path_is_normalized(self, tmp_path: Path) -> None:
+        """Heading paths should use the same normalized form as title/raw_text."""
+        registry = create_default_registry()
+        p = tmp_path / "heading_norm.md"
+        p.write_text("# ＡＢＣ  标题\n\n正文内容。", encoding="utf-8")
+
+        result = registry.parse(p)
+
+        assert result.parse_status == "success"
+        assert result.title == "ABC 标题"
+        assert [para.heading_path for para in result.paragraphs] == ["ABC 标题", "ABC 标题"]
+
 
 class TestNormalizationOffsetIntegrity:
     """Offsets must remain valid AFTER normalization in registry.parse()."""
@@ -237,7 +255,7 @@ class TestParserChunkerIntegration:
             encoding="utf-8",
         )
         parsed = registry.parse(p)
-        chunks = Chunker().chunk(parsed)
+        chunks = _chunk(parsed)
         assert len(chunks) >= 1
         for c in chunks:
             # char_start/char_end must locate valid text in raw_text
@@ -246,7 +264,7 @@ class TestParserChunkerIntegration:
     def test_md_parse_then_chunk(self, tmp_md: Path) -> None:
         registry = create_default_registry()
         parsed = registry.parse(tmp_md)
-        chunks = Chunker().chunk(parsed)
+        chunks = _chunk(parsed)
         assert len(chunks) >= 1
         # Heading paths should propagate to chunks
         headings = [c.heading_path for c in chunks if c.heading_path]
@@ -266,7 +284,7 @@ class TestParserChunkerIntegration:
             encoding="utf-8",
         )
         parsed = registry.parse(p)
-        chunks = Chunker().chunk(parsed)
+        chunks = _chunk(parsed)
         assert len(chunks) >= 2
         for c in chunks:
             assert 0 <= c.char_start <= c.char_end <= len(parsed.raw_text)
@@ -276,7 +294,7 @@ class TestParserChunkerIntegration:
         registry = create_default_registry()
         parsed = registry.parse(tmp_docx)
         assert parsed.parse_status == "success"
-        chunks = Chunker().chunk(parsed)
+        chunks = _chunk(parsed)
         assert len(chunks) >= 1
         for c in chunks:
             assert 0 <= c.char_start <= c.char_end <= len(parsed.raw_text)
@@ -291,7 +309,7 @@ class TestParserChunkerIntegration:
         registry = create_default_registry()
         parsed = registry.parse(tmp_pdf)
         assert parsed.parse_status == "success"
-        chunks = Chunker().chunk(parsed)
+        chunks = _chunk(parsed)
         assert len(chunks) >= 1
         for c in chunks:
             assert 0 <= c.char_start <= c.char_end <= len(parsed.raw_text)
@@ -306,7 +324,7 @@ class TestParserChunkerIntegration:
         registry = create_default_registry()
         parsed = registry.parse(tmp_pdf_multipage)
         assert parsed.parse_status == "success"
-        chunks = Chunker().chunk(parsed)
+        chunks = _chunk(parsed)
         assert len(chunks) >= 1
         for c in chunks:
             assert c.page_no is not None
@@ -317,7 +335,7 @@ class TestParserChunkerIntegration:
         registry = create_default_registry()
         parsed = registry.parse(tmp_pdf_with_toc)
         assert parsed.parse_status == "success"
-        chunks = Chunker().chunk(parsed)
+        chunks = _chunk(parsed)
         assert len(chunks) >= 1
         paths = [c.heading_path for c in chunks if c.heading_path]
         assert len(paths) > 0, "Expected heading_path from TOC bookmarks"
@@ -332,7 +350,7 @@ class TestUltraShortDocuments:
         p.write_text("OK", encoding="utf-8")
         parsed = registry.parse(p)
         assert parsed.parse_status == "success"
-        chunks = Chunker().chunk(parsed)
+        chunks = _chunk(parsed)
         assert len(chunks) == 1
         assert chunks[0].text == "OK"
 
@@ -342,7 +360,7 @@ class TestUltraShortDocuments:
         p.write_text("Hi", encoding="utf-8")
         parsed = registry.parse(p)
         assert parsed.parse_status == "success"
-        chunks = Chunker().chunk(parsed)
+        chunks = _chunk(parsed)
         assert len(chunks) == 1
         assert "Hi" in chunks[0].text
 
@@ -357,7 +375,7 @@ class TestUltraShortDocuments:
         doc.save(str(p))
         parsed = registry.parse(p)
         assert parsed.parse_status == "success"
-        chunks = Chunker().chunk(parsed)
+        chunks = _chunk(parsed)
         assert len(chunks) == 1
         assert "AB" in chunks[0].text
 
@@ -372,7 +390,7 @@ class TestUltraShortDocuments:
         doc.close()
         parsed = registry.parse(p)
         assert parsed.parse_status == "success"
-        chunks = Chunker().chunk(parsed)
+        chunks = _chunk(parsed)
         assert len(chunks) == 1
         assert "XY" in chunks[0].text
 

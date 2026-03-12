@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from opendocs.indexing.chunker import ChunkConfig, Chunker
 from opendocs.parsers.base import Paragraph, ParsedDocument
 
+TEST_DOC_ID = "11111111-1111-4111-8111-111111111111"
+
 
 def _make_doc(
     paragraphs: list[Paragraph],
@@ -22,6 +24,15 @@ def _make_doc(
         raw_text=raw_text,
         paragraphs=paragraphs,
     )
+
+
+def _chunk(
+    doc: ParsedDocument,
+    config: ChunkConfig | None = None,
+    *,
+    doc_id: str = TEST_DOC_ID,
+):
+    return Chunker().chunk(doc, config, doc_id=doc_id)
 
 
 class TestChunkConfigValidation:
@@ -51,7 +62,7 @@ class TestChunkConfigValidation:
 class TestChunkerShortDoc:
     def test_empty_doc(self) -> None:
         doc = _make_doc([], raw_text="")
-        chunks = Chunker().chunk(doc)
+        chunks = _chunk(doc)
         assert chunks == []
 
     def test_chunk_failed_document(self) -> None:
@@ -63,7 +74,7 @@ class TestChunkerShortDoc:
             parse_status="failed",
             error_info="corruption",
         )
-        assert Chunker().chunk(doc) == []
+        assert _chunk(doc) == []
 
     def test_chunk_failed_document_with_nonempty_raw(self) -> None:
         """Failed doc with non-empty raw_text must still produce zero chunks."""
@@ -74,7 +85,7 @@ class TestChunkerShortDoc:
             parse_status="failed",
             error_info="bad status",
         )
-        assert Chunker().chunk(doc) == []
+        assert _chunk(doc) == []
 
     def test_very_short_doc(self) -> None:
         doc = _make_doc(
@@ -82,14 +93,14 @@ class TestChunkerShortDoc:
             raw_text="Hi",
         )
         config = ChunkConfig(min_chunk_chars=50)
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         assert len(chunks) == 1
         assert chunks[0].text == "Hi"
         assert chunks[0].chunk_index == 0
 
     def test_no_paragraphs_with_text(self) -> None:
         doc = _make_doc([], raw_text="Some text")
-        chunks = Chunker().chunk(doc)
+        chunks = _chunk(doc)
         assert len(chunks) == 1
         assert chunks[0].text == "Some text"
 
@@ -106,7 +117,7 @@ class TestChunkerParagraphBoundary:
         config = ChunkConfig(
             max_chars=900, max_chars_latin=900, overlap_ratio=0.0, min_chunk_chars=50
         )
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
 
         # Two paragraphs of 400+1+400=801 fit in 900, third doesn't
         assert len(chunks) >= 2
@@ -120,7 +131,7 @@ class TestChunkerParagraphBoundary:
         ]
         doc = _make_doc(paras)
         config = ChunkConfig(max_chars=5000, overlap_ratio=0.0, min_chunk_chars=5)
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         assert len(chunks) == 1
         assert chunks[0].paragraph_start == 0
         assert chunks[0].paragraph_end == 1
@@ -139,7 +150,7 @@ class TestChunkerParagraphBoundary:
             min_chunk_chars=5,
         )
 
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
 
         assert len(chunks) == 2
         assert chunks[1].char_start == 100
@@ -168,7 +179,7 @@ class TestChunkerHeadingBoundary:
         ]
         doc = _make_doc(paras)
         config = ChunkConfig(max_chars=5000, overlap_ratio=0.0, min_chunk_chars=5)
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
 
         # Different heading_path → forced split
         assert len(chunks) == 2
@@ -204,7 +215,7 @@ class TestChunkerPageBoundary:
             min_chunk_chars=5,
         )
 
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
 
         assert len(chunks) == 2
         assert chunks[0].page_no == 1
@@ -244,7 +255,7 @@ class TestChunkerHeadingOverlapReset:
             overlap_ratio=0.12,
             min_chunk_chars=5,
         )
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         assert len(chunks) == 2
         # Second chunk (Chapter 1) must NOT contain any 'A' from Intro
         assert "A" not in chunks[1].text, "Overlap leaked across heading boundary"
@@ -262,12 +273,34 @@ class TestChunkerLongParagraph:
         config = ChunkConfig(
             max_chars=900, max_chars_latin=900, overlap_ratio=0.0, min_chunk_chars=50
         )
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
 
         assert len(chunks) >= 3  # 2000 / 900 ≈ 3
         for c in chunks:
             assert c.paragraph_start == 0
             assert c.paragraph_end == 0
+
+    def test_overlap_into_long_paragraph_updates_start_locator(self) -> None:
+        paras = [
+            Paragraph(text="A" * 200, index=0, start_char=0, end_char=200, heading_path="H"),
+            Paragraph(text="B" * 1200, index=1, start_char=201, end_char=1401, heading_path="H"),
+        ]
+        doc = _make_doc(paras, raw_text=("A" * 200) + "\n" + ("B" * 1200))
+        config = ChunkConfig(
+            max_chars=900,
+            max_chars_latin=900,
+            overlap_ratio=0.12,
+            min_chunk_chars=50,
+        )
+
+        chunks = _chunk(doc, config)
+
+        assert len(chunks) == 3
+        assert chunks[1].char_start < paras[1].start_char
+        assert chunks[1].text.startswith("A" * 20)
+        assert chunks[1].paragraph_start == 0
+        assert chunks[1].paragraph_end == 1
+        assert chunks[1].heading_path == "H"
 
 
 class TestChunkerNaturalBreak:
@@ -283,7 +316,7 @@ class TestChunkerNaturalBreak:
         config = ChunkConfig(
             max_chars=900, max_chars_latin=900, overlap_ratio=0.0, min_chunk_chars=50
         )
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         assert len(chunks) >= 2
         # First chunk should end at a sentence boundary (after '。')
         assert chunks[0].text.endswith("。")
@@ -301,7 +334,7 @@ class TestChunkerNaturalBreak:
         config = ChunkConfig(
             max_chars=500, max_chars_latin=500, overlap_ratio=0.0, min_chunk_chars=50
         )
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         assert len(chunks) >= 2
         # First chunk should end at a sentence boundary
         assert chunks[0].text.rstrip().endswith(".")
@@ -317,7 +350,7 @@ class TestChunkerNaturalBreak:
         config = ChunkConfig(
             max_chars=900, max_chars_latin=900, overlap_ratio=0.0, min_chunk_chars=50
         )
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         assert len(chunks) >= 3
         # All text should be covered
         total = sum(c.char_end - c.char_start for c in chunks)
@@ -341,7 +374,7 @@ class TestChunkerLanguageAware:
             overlap_ratio=0.0,
             min_chunk_chars=50,
         )
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         assert len(chunks) == 1
 
     def test_chinese_uses_smaller_max(self) -> None:
@@ -357,7 +390,7 @@ class TestChunkerLanguageAware:
             overlap_ratio=0.0,
             min_chunk_chars=50,
         )
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         # 2000 / 900 → at least 3 chunks
         assert len(chunks) >= 3
 
@@ -376,7 +409,7 @@ class TestChunkerOverlap:
         config = ChunkConfig(
             max_chars=600, max_chars_latin=600, overlap_ratio=0.12, min_chunk_chars=50
         )
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
 
         assert len(chunks) >= 2
         # Second chunk should start with overlap from first
@@ -403,7 +436,7 @@ class TestChunkerOverlap:
                 overlap_ratio=ratio,
                 min_chunk_chars=50,
             )
-            chunks = Chunker().chunk(doc, config)
+            chunks = _chunk(doc, config)
             assert len(chunks) >= 2, f"Expected multiple chunks at ratio={ratio}"
             for i in range(1, len(chunks)):
                 prev_text = chunks[i - 1].text
@@ -424,7 +457,7 @@ class TestChunkerMetadata:
         ]
         doc = _make_doc(paras)
         config = ChunkConfig(max_chars=5000, overlap_ratio=0.0, min_chunk_chars=5)
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         assert chunks[0].char_start == 0
         assert chunks[0].char_end == 11
 
@@ -435,7 +468,7 @@ class TestChunkerMetadata:
         ]
         doc = _make_doc(paras)
         config = ChunkConfig(max_chars=5000, overlap_ratio=0.0, min_chunk_chars=5)
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         # Single chunk, page_no = first paragraph's page
         assert chunks[0].page_no == 1
 
@@ -450,7 +483,7 @@ class TestChunkerMetadata:
             ),
         ]
         doc = _make_doc(paras)
-        chunks = Chunker().chunk(doc)
+        chunks = _chunk(doc)
         assert chunks[0].heading_path == "A > B"
 
     def test_token_estimate(self) -> None:
@@ -458,7 +491,7 @@ class TestChunkerMetadata:
             Paragraph(text="Hello World", index=0, start_char=0, end_char=11),
         ]
         doc = _make_doc(paras)
-        chunks = Chunker().chunk(doc)
+        chunks = _chunk(doc)
         # token_estimate should be a positive integer
         assert chunks[0].token_estimate >= 1
 
@@ -469,7 +502,7 @@ class TestChunkerMetadata:
             Paragraph(text=chinese, index=0, start_char=0, end_char=len(chinese)),
         ]
         doc = _make_doc(paras)
-        chunks = Chunker().chunk(doc)
+        chunks = _chunk(doc)
         # CJK: ~0.67 tokens per char → expect at least len/2
         assert chunks[0].token_estimate >= len(chinese) // 2
 
@@ -499,7 +532,7 @@ class TestChunkerOffsetLocator:
         config = ChunkConfig(
             max_chars=600, max_chars_latin=600, overlap_ratio=0.12, min_chunk_chars=50
         )
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         assert len(chunks) >= 2
         for c in chunks:
             located = doc.raw_text[c.char_start : c.char_end]
@@ -529,7 +562,7 @@ class TestChunkerOffsetLocator:
         config = ChunkConfig(
             max_chars=200, max_chars_latin=200, overlap_ratio=0.0, min_chunk_chars=50
         )
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         # Every character in raw_text should be covered by at least one chunk's range
         covered = set()
         for c in chunks:
@@ -552,7 +585,7 @@ class TestChunkerChineseBreakPoints:
         config = ChunkConfig(
             max_chars=900, max_chars_latin=900, overlap_ratio=0.0, min_chunk_chars=50
         )
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         assert len(chunks) >= 2
         assert chunks[0].text.endswith("！")
 
@@ -566,7 +599,7 @@ class TestChunkerChineseBreakPoints:
         config = ChunkConfig(
             max_chars=900, max_chars_latin=900, overlap_ratio=0.0, min_chunk_chars=50
         )
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         assert len(chunks) >= 2
         assert chunks[0].text.endswith("？")
 
@@ -581,7 +614,7 @@ class TestChunkerChunkId:
             Paragraph(text="Hello", index=0, start_char=0, end_char=5),
         ]
         doc = _make_doc(paras)
-        chunks = Chunker().chunk(doc)
+        chunks = _chunk(doc)
         assert len(chunks) == 1
         # Must be a valid UUID string
         parsed = uuid.UUID(chunks[0].chunk_id)
@@ -596,7 +629,7 @@ class TestChunkerChunkId:
         config = ChunkConfig(
             max_chars=600, max_chars_latin=600, overlap_ratio=0.0, min_chunk_chars=50
         )
-        chunks = Chunker().chunk(doc, config)
+        chunks = _chunk(doc, config)
         assert len(chunks) >= 2
         ids = [c.chunk_id for c in chunks]
         assert len(set(ids)) == len(ids), "chunk_ids must be unique"
@@ -605,20 +638,20 @@ class TestChunkerChunkId:
 class TestChunkerDocId:
     """doc_id must propagate to all ChunkResult instances (spec §8.3)."""
 
-    def test_doc_id_default_none(self) -> None:
+    def test_doc_id_is_required(self) -> None:
         paras = [
             Paragraph(text="Hello", index=0, start_char=0, end_char=5),
         ]
         doc = _make_doc(paras)
-        chunks = Chunker().chunk(doc)
-        assert chunks[0].doc_id is None
+        with pytest.raises(TypeError, match="doc_id"):
+            Chunker().chunk(doc)
 
     def test_doc_id_propagated(self) -> None:
         paras = [
             Paragraph(text="Hello", index=0, start_char=0, end_char=5),
         ]
         doc = _make_doc(paras)
-        chunks = Chunker().chunk(doc, doc_id="abc-123")
+        chunks = _chunk(doc, doc_id="abc-123")
         assert chunks[0].doc_id == "abc-123"
 
     def test_doc_id_on_multi_chunk(self) -> None:
@@ -630,7 +663,7 @@ class TestChunkerDocId:
         config = ChunkConfig(
             max_chars=600, max_chars_latin=600, overlap_ratio=0.0, min_chunk_chars=50
         )
-        chunks = Chunker().chunk(doc, config, doc_id="doc-42")
+        chunks = _chunk(doc, config, doc_id="doc-42")
         assert len(chunks) >= 2
         for c in chunks:
             assert c.doc_id == "doc-42"
@@ -644,7 +677,7 @@ class TestChunkerDocId:
         config = ChunkConfig(
             max_chars=900, max_chars_latin=900, overlap_ratio=0.0, min_chunk_chars=50
         )
-        chunks = Chunker().chunk(doc, config, doc_id="split-id")
+        chunks = _chunk(doc, config, doc_id="split-id")
         assert len(chunks) >= 3
         for c in chunks:
             assert c.doc_id == "split-id"
@@ -656,7 +689,7 @@ class TestChunkerDocId:
         ]
         doc = _make_doc(paras)
         config = ChunkConfig(max_chars=5000, overlap_ratio=0.0, min_chunk_chars=5)
-        chunks = Chunker().chunk(doc, config, doc_id="heading-doc")
+        chunks = _chunk(doc, config, doc_id="heading-doc")
         assert len(chunks) == 2
         for c in chunks:
             assert c.doc_id == "heading-doc"
@@ -680,7 +713,7 @@ class TestChunkerPartialDocument:
             parse_status="partial",
             error_info="failed pages: [3]",
         )
-        chunks = Chunker().chunk(doc)
+        chunks = _chunk(doc)
         assert len(chunks) >= 1
         # Chunks should contain the available content
         all_text = " ".join(c.text for c in chunks)
@@ -703,7 +736,7 @@ class TestChunkerPartialDocument:
             parse_status="partial",
             error_info="failed paragraphs at indices: [1]",
         )
-        chunks = Chunker().chunk(doc)
+        chunks = _chunk(doc)
         assert len(chunks) == 1
         assert chunks[0].text == "Surviving paragraph."
 

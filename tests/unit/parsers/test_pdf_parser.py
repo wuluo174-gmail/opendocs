@@ -47,8 +47,11 @@ class TestPdfParser:
 
     def test_empty_pdf(self, tmp_pdf_empty: Path) -> None:
         result = self.parser.parse(tmp_pdf_empty)
-        assert result.parse_status == "success"
+        assert result.parse_status == "failed"
         assert result.paragraphs == []
+        assert result.error is not None
+        assert result.error.code == "no_text_layer"
+        assert result.error_info == "no extractable text layer"
 
     def test_title_from_text(self, tmp_pdf: Path) -> None:
         result = self.parser.parse(tmp_pdf)

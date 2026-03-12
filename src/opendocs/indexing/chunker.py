@@ -93,8 +93,8 @@ class ChunkResult:
     paragraph_end: int
     heading_path: str | None
     token_estimate: int
+    doc_id: str
     chunk_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    doc_id: str | None = None
     embedding_model: str | None = None
     embedding_key: str | None = None
 
@@ -108,13 +108,17 @@ class Chunker:
     3. Paragraph boundary: accumulate until near max_chars
     4. Intra-paragraph split: when a single paragraph > max_chars
     5. Overlap: each new chunk starts with tail of previous chunk
+
+    ``doc_id`` is a required caller input because spec §8.3 requires every
+    chunk to retain its document identity alongside locator metadata.
     """
 
     def chunk(
         self,
         doc: ParsedDocument,
         config: ChunkConfig | None = None,
-        doc_id: str | None = None,
+        *,
+        doc_id: str,
     ) -> list[ChunkResult]:
         cfg = config or ChunkConfig()
 
@@ -270,7 +274,8 @@ class Chunker:
         results: list[ChunkResult],
         chunk_idx: int,
         overlap_start: int | None,
-        doc_id: str | None = None,
+        *,
+        doc_id: str,
     ) -> int:
         paras = [doc.paragraphs[i] for i in para_indices]
         first = paras[0]
@@ -340,7 +345,8 @@ class Chunker:
         overlap_start: int | None,
         effective_max: int,
         overlap_chars: int,
-        doc_id: str | None = None,
+        *,
+        doc_id: str,
     ) -> tuple[int, int | None]:
         para = doc.paragraphs[para_idx]
         text = para.text
@@ -360,6 +366,7 @@ class Chunker:
 
             chunk_end = para.start_char + end
             chunk_text = doc.raw_text[chunk_start:chunk_end]
+            start_para = Chunker._find_paragraph_index(doc, chunk_start)
 
             results.append(
                 ChunkResult(
@@ -367,10 +374,10 @@ class Chunker:
                     text=chunk_text,
                     char_start=chunk_start,
                     char_end=chunk_end,
-                    page_no=para.page_no,
-                    paragraph_start=para.index,
+                    page_no=doc.paragraphs[start_para].page_no,
+                    paragraph_start=start_para,
                     paragraph_end=para.index,
-                    heading_path=para.heading_path,
+                    heading_path=doc.paragraphs[start_para].heading_path,
                     token_estimate=_estimate_tokens(chunk_text),
                     doc_id=doc_id,
                 )

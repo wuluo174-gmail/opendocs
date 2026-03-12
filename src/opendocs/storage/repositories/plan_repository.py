@@ -35,13 +35,12 @@ class PlanRepository:
         *,
         approved_at: datetime | None = None,
         executed_at: datetime | None = None,
-        _internal: bool = False,
     ) -> bool:
-        if status == "executed" and not _internal:
+        if status == "executed":
             raise PlanNotApprovedError(
                 "executed status transition must use FileOperationService.execute_plan"
             )
-        if executed_at is not None and not _internal:
+        if executed_at is not None:
             raise ValueError("executed_at is managed only by FileOperationService.execute_plan")
         plan = self.get_by_id(plan_id)
         if plan is None:
@@ -49,8 +48,6 @@ class PlanRepository:
         plan.status = status
         if status == "approved":
             plan.approved_at = approved_at or utcnow_naive()
-        if status == "executed":
-            plan.executed_at = executed_at or utcnow_naive()
         if status == "failed":
             plan.executed_at = utcnow_naive()
         self._session.flush()

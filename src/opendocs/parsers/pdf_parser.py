@@ -212,6 +212,18 @@ class PdfParser(BaseParser):
                 message=error_info,
                 details={"parser": "PdfParser", "failed_pages": failed_pages},
             )
+        elif not raw_text.strip():
+            parse_status = "failed"
+            error_info = "no extractable text layer"
+            error = ParseError(
+                code="no_text_layer",
+                message=error_info,
+                details={
+                    "parser": "PdfParser",
+                    "page_count": extraction.page_count,
+                    "failed_pages": failed_pages,
+                },
+            )
         elif failed_pages:
             parse_status = "partial"
             error_info = f"failed pages: {failed_pages}"

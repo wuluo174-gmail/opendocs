@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
-from opendocs.utils.logging import init_logging
+from opendocs.utils.logging import get_audit_logger, get_task_logger, init_logging
 
 
 def _read_log(path: Path) -> str:
@@ -97,6 +98,35 @@ def test_init_logging_closes_previous_handlers(tmp_path: Path) -> None:
     init_logging(second_log_dir)
 
     assert old_handler.stream is None or old_handler.stream.closed
+
+
+def test_init_logging_uses_daily_rotation_for_all_log_streams(tmp_path: Path) -> None:
+    logger = init_logging(tmp_path)
+    audit_logger = get_audit_logger()
+    task_logger = get_task_logger()
+
+    handlers = [logger.handlers[0], audit_logger.handlers[0], task_logger.handlers[0]]
+    for handler in handlers:
+        assert isinstance(handler, TimedRotatingFileHandler)
+        assert handler.when == "MIDNIGHT"
+        assert handler.backupCount == 7
+
+
+def test_audit_and_task_loggers_write_jsonl(tmp_path: Path) -> None:
+    init_logging(tmp_path)
+    audit_logger = get_audit_logger()
+    task_logger = get_task_logger()
+
+    audit_logger.info("audit bootstrap event")
+    task_logger.info("task bootstrap event")
+    for logger in (audit_logger, task_logger):
+        for handler in logger.handlers:
+            handler.flush()
+
+    audit_entries = _read_log_entries(tmp_path / "audit.jsonl")
+    task_entries = _read_log_entries(tmp_path / "task.jsonl")
+    assert audit_entries[0]["message"] == "audit bootstrap event"
+    assert task_entries[0]["message"] == "task bootstrap event"
 
 
 def test_assignment_values_with_commas_semicolons_spaces_are_redacted(tmp_path: Path) -> None:

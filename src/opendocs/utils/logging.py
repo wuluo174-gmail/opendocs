@@ -7,8 +7,12 @@ import logging
 import re
 import traceback
 from datetime import UTC, datetime
-from logging.handlers import RotatingFileHandler
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
+
+APP_LOGGER_NAME = "opendocs"
+AUDIT_LOGGER_NAME = "opendocs.audit"
+TASK_LOGGER_NAME = "opendocs.task"
 
 _ASSIGNMENT_PATTERN = re.compile(
     r"""(?ix)
@@ -82,26 +86,48 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False)
 
 
-def init_logging(log_dir: str | Path) -> logging.Logger:
-    path = Path(log_dir)
-    path.mkdir(parents=True, exist_ok=True)
+def _build_handler(log_path: Path) -> TimedRotatingFileHandler:
+    handler = TimedRotatingFileHandler(
+        log_path,
+        when="midnight",
+        interval=1,
+        backupCount=7,
+        encoding="utf-8",
+        utc=True,
+    )
+    handler.setFormatter(JsonFormatter())
+    handler.addFilter(RedactFilter())
+    return handler
 
-    logger = logging.getLogger("opendocs")
+
+def _reset_logger(name: str, log_path: Path) -> logging.Logger:
+    logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
         handler.close()
-
-    file_handler = RotatingFileHandler(
-        path / "app.log",
-        maxBytes=1_000_000,
-        backupCount=5,
-        encoding="utf-8",
-    )
-    formatter = JsonFormatter()
-    file_handler.setFormatter(formatter)
-    file_handler.addFilter(RedactFilter())
-    logger.addHandler(file_handler)
+    logger.addHandler(_build_handler(log_path))
     logger.propagate = False
-
     return logger
+
+
+def get_app_logger() -> logging.Logger:
+    return logging.getLogger(APP_LOGGER_NAME)
+
+
+def get_audit_logger() -> logging.Logger:
+    return logging.getLogger(AUDIT_LOGGER_NAME)
+
+
+def get_task_logger() -> logging.Logger:
+    return logging.getLogger(TASK_LOGGER_NAME)
+
+
+def init_logging(log_dir: str | Path) -> logging.Logger:
+    path = Path(log_dir)
+    path.mkdir(parents=True, exist_ok=True)
+
+    app_logger = _reset_logger(APP_LOGGER_NAME, path / "app.log")
+    _reset_logger(AUDIT_LOGGER_NAME, path / "audit.jsonl")
+    _reset_logger(TASK_LOGGER_NAME, path / "task.jsonl")
+    return app_logger

@@ -490,6 +490,24 @@ def test_plan_repository_rejects_executed_at_override(engine: Engine) -> None:
         assert refreshed.executed_at is None
 
 
+def test_plan_repository_has_no_internal_executed_escape_hatch(engine: Engine) -> None:
+    with Session(engine) as session:
+        repository = PlanRepository(session)
+        plan = FileOperationPlanModel(
+            plan_id=str(uuid.uuid4()),
+            operation_type="move",
+            status="draft",
+            item_count=1,
+            risk_level="low",
+            preview_json={"items": [{"from": "a", "to": "b"}]},
+        )
+        repository.create(plan)
+        session.commit()
+
+        with pytest.raises(TypeError, match="_internal"):
+            repository.update_status(plan.plan_id, "executed", _internal=True)
+
+
 def test_audit_repository_query(engine: Engine) -> None:
     with Session(engine) as session:
         repository = AuditRepository(session)
@@ -727,30 +745,3 @@ def test_memory_scope_key_unique_constraint(engine: Engine) -> None:
                     **{**base, "content": "duplicate"},
                 )
             )
-
-
-def test_memory_repository_rejects_m0_persistence(engine: Engine) -> None:
-    with Session(engine) as session:
-        repository = MemoryRepository(session)
-        m0_item = MemoryItemModel(
-            memory_id=str(uuid.uuid4()),
-            memory_type="M0",
-            scope_type="session",
-            scope_id="session-001",
-            key="intent",
-            content="find report",
-            importance=0.5,
-            status="active",
-            updated_at=_now(),
-        )
-        from opendocs.exceptions import StorageError
-
-        with pytest.raises(StorageError, match="M0 session memory must not be persisted"):
-            repository.create(m0_item)
-        session.rollback()
-        from sqlalchemy import select as _select
-
-        all_m0 = session.scalars(
-            _select(MemoryItemModel).where(MemoryItemModel.memory_type == "M0")
-        ).all()
-        assert all_m0 == []

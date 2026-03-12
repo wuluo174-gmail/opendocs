@@ -76,8 +76,14 @@ def test_cli_default_start_smoke(tmp_path: Path) -> None:
     assert completed.returncode == 0
     assert "OpenDocs baseline started." in completed.stdout
     log_file = app_root / "logs" / "app.log"
+    audit_log = app_root / "logs" / "audit.jsonl"
+    task_log = app_root / "logs" / "task.jsonl"
     assert log_file.exists()
+    assert audit_log.exists()
+    assert task_log.exists()
     assert "OpenDocs CLI started" in log_file.read_text(encoding="utf-8")
+    assert "OpenDocs audit logger started" in audit_log.read_text(encoding="utf-8")
+    assert "OpenDocs task logger started" in task_log.read_text(encoding="utf-8")
 
 
 def test_stage_scaffold_scripts_exist() -> None:
@@ -132,8 +138,14 @@ def test_cli_uses_explicit_config_root_for_logs(tmp_path: Path) -> None:
 
     assert completed.returncode == 0
     log_file = custom_root / "logs" / "app.log"
+    audit_log = custom_root / "logs" / "audit.jsonl"
+    task_log = custom_root / "logs" / "task.jsonl"
     assert log_file.exists()
+    assert audit_log.exists()
+    assert task_log.exists()
     assert "OpenDocs CLI started" in log_file.read_text(encoding="utf-8")
+    assert "OpenDocs audit logger started" in audit_log.read_text(encoding="utf-8")
+    assert "OpenDocs task logger started" in task_log.read_text(encoding="utf-8")
 
 
 def test_cli_creates_runtime_directory_skeleton(tmp_path: Path) -> None:
@@ -157,6 +169,8 @@ def test_cli_creates_runtime_directory_skeleton(tmp_path: Path) -> None:
         assert (app_root / expected).is_dir(), f"missing runtime dir: {expected}/"
     assert (app_root / "index" / "hnsw").is_dir(), "missing: index/hnsw/"
     assert (app_root / "index" / "cache").is_dir(), "missing: index/cache/"
+    assert (app_root / "logs" / "audit.jsonl").is_file(), "missing: logs/audit.jsonl"
+    assert (app_root / "logs" / "task.jsonl").is_file(), "missing: logs/task.jsonl"
 
 
 def test_cli_uses_non_canonical_explicit_config_root_for_logs(tmp_path: Path) -> None:
@@ -177,5 +191,9 @@ def test_cli_uses_non_canonical_explicit_config_root_for_logs(tmp_path: Path) ->
 
     assert completed.returncode == 0
     log_file = custom_root / "logs" / "app.log"
+    audit_log = custom_root / "logs" / "audit.jsonl"
+    task_log = custom_root / "logs" / "task.jsonl"
     assert log_file.exists()
     assert "OpenDocs CLI started" in log_file.read_text(encoding="utf-8")
+    assert "OpenDocs audit logger started" in audit_log.read_text(encoding="utf-8")
+    assert "OpenDocs task logger started" in task_log.read_text(encoding="utf-8")

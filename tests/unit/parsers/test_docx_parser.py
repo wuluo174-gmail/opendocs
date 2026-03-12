@@ -144,6 +144,7 @@ class TestDocxParser:
     def test_partial_status_when_some_paragraphs_fail(self, tmp_path: Path) -> None:
         """S2-T04: DOCX with some unreadable paragraphs should yield partial."""
         from docx import Document  # type: ignore[import-untyped]
+        from opendocs.parsers import docx_parser as docx_parser_module
 
         doc = Document()
         doc.add_heading("Title", level=1)
@@ -152,42 +153,33 @@ class TestDocxParser:
         docx_path = tmp_path / "partial.docx"
         doc.save(str(docx_path))
 
-        # Instead of fragile XML injection, directly validate the contract
-        # for a parser result that contains usable paragraphs plus failures.
-        from opendocs.parsers.base import Paragraph, ParsedDocument
+        original_extract = docx_parser_module._extract_paragraph_text
 
-        result = ParsedDocument(
-            file_path=str(docx_path),
-            file_type="docx",
-            raw_text="Title\nGood paragraph one.",
-            title="Title",
-            paragraphs=[
-                Paragraph(
-                    text="Title",
-                    index=0,
-                    start_char=0,
-                    end_char=5,
-                    heading_path="Title",
-                ),
-                Paragraph(
-                    text="Good paragraph one.",
-                    index=1,
-                    start_char=6,
-                    end_char=25,
-                    heading_path="Title",
-                ),
-            ],
-            parse_status="partial",
-            error_info="failed paragraphs at indices: [2]",
+        def _extract_with_single_failure(para_element, qn):
+            text = original_extract(para_element, qn)
+            if text == "Good paragraph two.":
+                raise RuntimeError("broken paragraph")
+            return text
+
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(
+            docx_parser_module,
+            "_extract_paragraph_text",
+            _extract_with_single_failure,
         )
+        try:
+            result = self.parser.parse(docx_path)
+        finally:
+            monkeypatch.undo()
 
         assert result.parse_status == "partial"
         assert result.error_info is not None
         assert "2" in result.error_info
         assert result.error is not None
         assert result.error.code == "partial_parse"
+        assert result.error.details["failed_paragraph_indices"] == [2]
         assert len(result.paragraphs) == 2
-        # Offsets valid
+        assert result.raw_text == "Title\nGood paragraph one."
         for para in result.paragraphs:
             assert result.raw_text[para.start_char : para.end_char] == para.text
 

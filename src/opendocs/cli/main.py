@@ -8,7 +8,7 @@ from pathlib import Path
 from opendocs import __version__
 from opendocs.config import load_settings, resolve_app_root
 from opendocs.exceptions import ConfigError
-from opendocs.utils import init_logging
+from opendocs.utils import get_audit_logger, get_task_logger, init_logging
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -57,9 +57,13 @@ def main(argv: list[str] | None = None) -> int:
 
     log_root = app_root / "logs"
     logger = init_logging(log_root)
-    # TODO: spec §19.2 requires audit.jsonl and task.jsonl structured log sinks.
-    # These will be created by AuditService in a later stage, not by CLI init.
+    audit_logger = get_audit_logger()
+    task_logger = get_task_logger()
+    # CLI bootstrap creates the runtime log skeleton; later stages will append
+    # structured audit/task events to these files via dedicated services.
     logger.info("OpenDocs CLI started")
+    audit_logger.info("OpenDocs audit logger started")
+    task_logger.info("OpenDocs task logger started")
     print("OpenDocs baseline started.")
     print(f"language={settings.app.language} local_only={settings.app.local_only}")
     return 0

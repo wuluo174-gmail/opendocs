@@ -227,6 +227,8 @@ class ParserRegistry:
             # Normalize each paragraph text first
             for para in result.paragraphs:
                 para.text = normalize_text(para.text)
+                if para.heading_path is not None:
+                    para.heading_path = normalize_text(para.heading_path)
             # Rebuild raw_text from normalized paragraphs and recompute offsets
             if result.paragraphs:
                 parts = [p.text for p in result.paragraphs]
