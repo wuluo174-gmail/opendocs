@@ -24,6 +24,53 @@ def _requirements_lock_path() -> Path:
     return _project_root() / "requirements.lock"
 
 
+def _project_venv_python_path() -> Path:
+    if platform.system().lower() == "windows":
+        return _project_root() / ".venv" / "Scripts" / "python.exe"
+    return _project_root() / ".venv" / "bin" / "python"
+
+
+def _detect_python_minor_version(python_path: Path) -> str | None:
+    completed = subprocess.run(
+        [
+            str(python_path),
+            "-c",
+            "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return None
+    version = completed.stdout.strip()
+    return version or None
+
+
+def _validate_project_virtualenv() -> str | None:
+    venv_python = _project_venv_python_path()
+    if venv_python.is_symlink() and not venv_python.exists():
+        return (
+            "local .venv points to a missing interpreter. "
+            "Remove .venv and recreate it with host-native Python 3.11."
+        )
+    if not venv_python.exists():
+        return None
+
+    version = _detect_python_minor_version(venv_python)
+    if version is None:
+        return (
+            f"local .venv exists but its interpreter health check failed: {venv_python}. "
+            "Remove .venv and recreate it with host-native Python 3.11."
+        )
+    if version != "3.11":
+        return (
+            f"local .venv uses Python {version}, expected 3.11. "
+            "Remove .venv and recreate it with host-native Python 3.11."
+        )
+    return None
+
+
 def _validate_lockfile_contract(lock_path: Path) -> str | None:
     """Return an error when the lock file contains remote/VCS requirements.
 
@@ -56,11 +103,14 @@ def _delegate_to_python311_if_needed(argv: list[str]) -> int | None:
         py_launcher = shutil.which("py")
         if py_launcher:
             cmd = [py_launcher, "-3.11", str(Path(__file__).resolve()), *argv]
-            print("[bootstrap] locked baseline requires Python 3.11; delegating to `py -3.11`.")
+            print(
+                "[bootstrap] locked baseline requires host-native Python 3.11; "
+                "delegating to `py -3.11`."
+            )
             return _run(cmd)
 
-    print("[bootstrap] failed: locked baseline requires Python 3.11.")
-    print("[bootstrap] install Python 3.11 and rerun this script.")
+    print("[bootstrap] failed: locked baseline requires host-native Python 3.11.")
+    print("[bootstrap] install host-native Python 3.11 and rerun this script.")
     return 1
 
 
@@ -73,6 +123,10 @@ def _install_locked_dependencies() -> int:
     validation_error = _validate_lockfile_contract(lock_path)
     if validation_error is not None:
         print(f"[bootstrap] failed: {validation_error}")
+        return 1
+    venv_error = _validate_project_virtualenv()
+    if venv_error is not None:
+        print(f"[bootstrap] failed: {venv_error}")
         return 1
 
     print(f"[bootstrap] python: {sys.version.split()[0]}")
@@ -108,8 +162,8 @@ def _install_locked_dependencies() -> int:
 
     print("[bootstrap] success")
     print("[bootstrap] next commands:")
-    print("  python -m opendocs --help")
-    print("  pytest -q")
+    print(f"  {sys.executable} -m opendocs --help")
+    print(f"  {sys.executable} -m pytest -q")
     return 0
 
 

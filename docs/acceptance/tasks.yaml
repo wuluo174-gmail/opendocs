@@ -71,17 +71,17 @@ global_redlines:
   - 外发必须最小化且可审计
   - 偏离锁定技术栈必须先出 ADR
 default_commands:
-  bootstrap: python scripts/bootstrap_dev.py
-  unit_test: pytest tests/unit -q
-  integration_test: pytest tests/integration -q
-  e2e_test: pytest tests/e2e -q
-  ui_test: pytest tests/e2e/ui -q
-  coverage: pytest --cov=src/opendocs --cov-report=term-missing
-  fixture_generation: python scripts/generate_fixture_corpus.py
-  acceptance: python scripts/run_acceptance.py --suite full
-  entry_cli: python -m opendocs
-  packaging: pyinstaller packaging/opendocs.spec
-  security_test: pytest tests/integration/security -q
+  bootstrap: ./.venv/bin/python scripts/bootstrap_dev.py
+  unit_test: ./.venv/bin/pytest tests/unit -q
+  integration_test: ./.venv/bin/pytest tests/integration -q
+  e2e_test: ./.venv/bin/pytest tests/e2e -q
+  ui_test: ./.venv/bin/pytest tests/e2e/ui -q
+  coverage: ./.venv/bin/pytest --cov=src/opendocs --cov-report=term-missing
+  fixture_generation: ./.venv/bin/python scripts/generate_fixture_corpus.py
+  acceptance: ./.venv/bin/python scripts/run_acceptance.py --suite full
+  entry_cli: ./.venv/bin/python -m opendocs
+  packaging: ./.venv/bin/pyinstaller packaging/opendocs.spec
+  security_test: ./.venv/bin/pytest tests/integration/security -q
 deliverable_contracts:
   repo_structure_minimum:
   - README.md
@@ -368,7 +368,7 @@ stages:
     - 覆盖新增、修改、删除、排除规则、重建幂等
   test_commands:
   - pytest tests/integration/indexing -q
-  - python scripts/rebuild_index.py --source tests/fixtures/generated/corpus_main
+  - ./.venv/bin/python scripts/rebuild_index.py --source tests/fixtures/generated/corpus_main
   exit_criteria:
   - 初次全量索引可运行
   - 文件增删改后索引同步
@@ -864,10 +864,10 @@ stages:
     - README、用户手册、配置示例、验收报告完整
     - 整体交付 DoD 满足
   test_commands:
-  - python scripts/generate_fixture_corpus.py --profile acceptance
-  - python scripts/run_acceptance.py --suite full
-  - pytest tests/performance -q
-  - pyinstaller packaging/opendocs.spec
+  - ./.venv/bin/python scripts/generate_fixture_corpus.py --profile acceptance
+  - ./.venv/bin/python scripts/run_acceptance.py --suite full
+  - ./.venv/bin/pytest tests/performance -q
+  - ./.venv/bin/pyinstaller packaging/opendocs.spec
   exit_criteria:
   - 验收脚本全绿
   - 三平台至少产出发布目录

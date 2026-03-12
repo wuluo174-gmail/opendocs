@@ -149,23 +149,6 @@ class Chunker:
                 )
             ]
 
-        if len(doc.raw_text) < cfg.min_chunk_chars:
-            p = doc.paragraphs
-            return [
-                ChunkResult(
-                    chunk_index=0,
-                    text=doc.raw_text,
-                    char_start=0,
-                    char_end=len(doc.raw_text),
-                    page_no=p[0].page_no if p else None,
-                    paragraph_start=p[0].index if p else 0,
-                    paragraph_end=p[-1].index if p else 0,
-                    heading_path=p[0].heading_path if p else None,
-                    token_estimate=_estimate_tokens(doc.raw_text),
-                    doc_id=doc_id,
-                )
-            ]
-
         # Group paragraphs into segments by locator boundary.
         # Heading changes must split chunks, and PDF page changes must also
         # split chunks so that page_no remains truthful for citations.

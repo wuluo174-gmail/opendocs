@@ -74,6 +74,9 @@ def test_seed_demo_data_inserts_records(db_path: Path) -> None:
             assert chunk is not None
             assert document is not None
             assert chunk.char_end <= len(chunk.text)
+            assert chunk.paragraph_start == 0
+            assert chunk.paragraph_end == 0
+            assert document.size_bytes == Path(document.path).stat().st_size
             assert Path(document.path).is_relative_to(db_path.parent.resolve())
     finally:
         engine.dispose()

@@ -74,6 +74,7 @@ def seed_demo_data(db_path: str | Path) -> dict[str, int]:
     resolved_db_path = Path(db_path)
     demo_doc_path, demo_doc_relative_path, demo_archive_path = resolve_seed_paths(resolved_db_path)
     _ensure_demo_document(demo_doc_path)
+    demo_doc_size = Path(demo_doc_path).stat().st_size
     init_db(resolved_db_path)
     engine = build_sqlite_engine(resolved_db_path)
     inserted = {
@@ -111,7 +112,7 @@ def seed_demo_data(db_path: str | Path) -> dict[str, int]:
                         hash_sha256=hashlib.sha256(Path(demo_doc_path).read_bytes()).hexdigest(),
                         title="Project Overview",
                         file_type="md",
-                        size_bytes=2048,
+                        size_bytes=demo_doc_size,
                         created_at=now,
                         modified_at=now,
                         indexed_at=now,
@@ -144,8 +145,8 @@ def seed_demo_data(db_path: str | Path) -> dict[str, int]:
                         char_start=0,
                         char_end=len(demo_chunk_text),
                         page_no=None,
-                        paragraph_start=1,
-                        paragraph_end=1,
+                        paragraph_start=0,
+                        paragraph_end=0,
                         heading_path="Overview",
                         token_estimate=16,
                         embedding_model="demo-embedding-model",

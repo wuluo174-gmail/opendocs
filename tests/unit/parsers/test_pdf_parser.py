@@ -6,8 +6,6 @@ from pathlib import Path
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
-
 from opendocs.parsers.pdf_parser import PdfParser  # noqa: E402
 
 
@@ -176,7 +174,36 @@ class TestPdfParser:
         for para in result.paragraphs:
             assert result.raw_text[para.start_char : para.end_char] == para.text
 
-    def test_fallback_to_pypdf_is_marked_partial_and_auditable(self, tmp_pdf: Path) -> None:
+    def test_mixed_text_and_empty_page_is_partial(self, tmp_path: Path) -> None:
+        """A document with some textual pages and some empty pages is partial."""
+        from unittest.mock import patch
+
+        from opendocs.parsers.pdf_parser import _PdfExtraction
+
+        fake_extraction = _PdfExtraction(
+            pages=[(1, "Page one text."), (2, "")],
+            title=None,
+            page_count=2,
+            failed_pages=[],
+            toc=[],
+            empty_pages=[2],
+        )
+
+        fake_pdf = tmp_path / "mixed.pdf"
+        fake_pdf.write_bytes(b"%PDF-1.4\n")
+
+        with patch("opendocs.parsers.pdf_parser._try_fitz", return_value=fake_extraction):
+            result = self.parser.parse(fake_pdf)
+
+        assert result.parse_status == "partial"
+        assert result.error is not None
+        assert result.error.code == "partial_parse"
+        assert result.error.details["failed_pages"] == []
+        assert result.error.details["empty_pages"] == [2]
+        assert "no text extracted on pages: [2]" in result.error_info
+        assert [para.page_no for para in result.paragraphs] == [1]
+
+    def test_fallback_to_pypdf_is_marked_partial_and_auditable(self, tmp_path: Path) -> None:
         """S2-T01/T04: backend fallback must surface as a partial parse."""
         from unittest.mock import patch
 
@@ -189,10 +216,12 @@ class TestPdfParser:
             failed_pages=[],
             toc=[],
         )
+        fake_pdf = tmp_path / "fallback.pdf"
+        fake_pdf.write_bytes(b"%PDF-1.4\n")
 
         with patch("opendocs.parsers.pdf_parser._try_fitz", side_effect=RuntimeError("fitz boom")):
             with patch("opendocs.parsers.pdf_parser._try_pypdf", return_value=fake_extraction):
-                result = self.parser.parse(tmp_pdf)
+                result = self.parser.parse(fake_pdf)
 
         assert result.parse_status == "partial"
         assert result.error_info is not None

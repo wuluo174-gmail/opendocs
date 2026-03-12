@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -35,6 +35,7 @@ class _PdfExtraction:
     page_count: int
     failed_pages: list[int]  # 1-based page numbers that failed
     toc: list[_TocEntry]  # table of contents (may be empty)
+    empty_pages: list[int] = field(default_factory=list)  # extracted but yielded no text
 
 
 def _try_fitz(file_path: Path) -> _PdfExtraction:
@@ -46,9 +47,13 @@ def _try_fitz(file_path: Path) -> _PdfExtraction:
         page_count = len(doc)
         pages: list[tuple[int, str]] = []
         failed_pages: list[int] = []
+        empty_pages: list[int] = []
         for i, page in enumerate(doc):
             try:
-                pages.append((i + 1, page.get_text()))
+                page_text = page.get_text()
+                pages.append((i + 1, page_text))
+                if not page_text.strip():
+                    empty_pages.append(i + 1)
             except Exception:  # noqa: BLE001
                 failed_pages.append(i + 1)
 
@@ -60,7 +65,14 @@ def _try_fitz(file_path: Path) -> _PdfExtraction:
         except Exception:  # noqa: BLE001
             pass
 
-    return _PdfExtraction(pages, title or None, page_count, failed_pages, toc)
+    return _PdfExtraction(
+        pages,
+        title or None,
+        page_count,
+        failed_pages,
+        toc,
+        empty_pages=empty_pages,
+    )
 
 
 def _try_pypdf(file_path: Path) -> _PdfExtraction:
@@ -74,14 +86,24 @@ def _try_pypdf(file_path: Path) -> _PdfExtraction:
     page_count = len(reader.pages)
     pages: list[tuple[int, str]] = []
     failed_pages: list[int] = []
+    empty_pages: list[int] = []
     for i, page in enumerate(reader.pages):
         try:
             text = page.extract_text() or ""
             pages.append((i + 1, text))
+            if not text.strip():
+                empty_pages.append(i + 1)
         except Exception:  # noqa: BLE001
             failed_pages.append(i + 1)
     # pypdf has no convenient TOC API; return empty
-    return _PdfExtraction(pages, title or None, page_count, failed_pages, toc=[])
+    return _PdfExtraction(
+        pages,
+        title or None,
+        page_count,
+        failed_pages,
+        toc=[],
+        empty_pages=empty_pages,
+    )
 
 
 class PdfParser(BaseParser):
@@ -202,6 +224,7 @@ class PdfParser(BaseParser):
 
         # Determine parse status
         failed_pages = extraction.failed_pages
+        empty_pages = extraction.empty_pages
         parse_status: Literal["success", "partial", "failed"]
         error: ParseError | None = None
         if failed_pages and not extraction.pages:
@@ -222,15 +245,25 @@ class PdfParser(BaseParser):
                     "parser": "PdfParser",
                     "page_count": extraction.page_count,
                     "failed_pages": failed_pages,
+                    "empty_pages": empty_pages,
                 },
             )
-        elif failed_pages:
+        elif failed_pages or empty_pages:
             parse_status = "partial"
-            error_info = f"failed pages: {failed_pages}"
+            status_parts: list[str] = []
+            if failed_pages:
+                status_parts.append(f"failed pages: {failed_pages}")
+            if empty_pages:
+                status_parts.append(f"no text extracted on pages: {empty_pages}")
+            error_info = "; ".join(status_parts)
             error = ParseError(
                 code="partial_parse",
                 message=error_info,
-                details={"parser": "PdfParser", "failed_pages": failed_pages},
+                details={
+                    "parser": "PdfParser",
+                    "failed_pages": failed_pages,
+                    "empty_pages": empty_pages,
+                },
             )
         else:
             parse_status = "success"

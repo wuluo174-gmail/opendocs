@@ -46,7 +46,7 @@ class DocxParser(BaseParser):
         heading_stack: list[tuple[int, str]] = []
         current_heading_path: str | None = None
         title: str | None = None
-        failed_paras: list[int] = []
+        failed_source_paras: list[int] = []
         failed_tables: list[int] = []
 
         # Try document core properties title first
@@ -73,9 +73,11 @@ class DocxParser(BaseParser):
                 try:
                     text = _extract_paragraph_text(child, qn)
                 except Exception:  # noqa: BLE001
-                    # Record the output-relative index so error messages
-                    # align with Paragraph.index in the final result.
-                    failed_paras.append(len(entries))
+                    # Record source-order paragraph indices from the original
+                    # document stream. Failed paragraphs are omitted from the
+                    # final result, so returned Paragraph.index values cannot
+                    # reliably point to them.
+                    failed_source_paras.append(xml_para_idx)
                     xml_para_idx += 1
                     continue
 
@@ -149,8 +151,10 @@ class DocxParser(BaseParser):
 
         # Determine parse status
         failure_messages: list[str] = []
-        if failed_paras:
-            failure_messages.append(f"failed paragraphs at indices: {failed_paras}")
+        if failed_source_paras:
+            failure_messages.append(
+                f"failed source paragraphs at indices: {failed_source_paras}"
+            )
         if failed_tables:
             failure_messages.append(f"failed table blocks: {failed_tables}")
 
@@ -163,7 +167,7 @@ class DocxParser(BaseParser):
                 message=error_info,
                 details={
                     "parser": "DocxParser",
-                    "failed_paragraph_indices": failed_paras,
+                    "failed_source_paragraph_indices": failed_source_paras,
                     "failed_table_blocks": failed_tables,
                 },
             )
@@ -175,7 +179,7 @@ class DocxParser(BaseParser):
                 message=error_info,
                 details={
                     "parser": "DocxParser",
-                    "failed_paragraph_indices": failed_paras,
+                    "failed_source_paragraph_indices": failed_source_paras,
                     "failed_table_blocks": failed_tables,
                 },
             )

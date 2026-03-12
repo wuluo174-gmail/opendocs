@@ -98,6 +98,47 @@ class TestChunkerShortDoc:
         assert chunks[0].text == "Hi"
         assert chunks[0].chunk_index == 0
 
+    def test_very_short_doc_still_respects_locator_boundaries(self) -> None:
+        doc = _make_doc(
+            [
+                Paragraph(
+                    text="A",
+                    index=0,
+                    start_char=0,
+                    end_char=1,
+                    page_no=1,
+                    heading_path="Intro",
+                ),
+                Paragraph(
+                    text="B",
+                    index=1,
+                    start_char=2,
+                    end_char=3,
+                    page_no=2,
+                    heading_path="Methods",
+                ),
+            ],
+            raw_text="A\nB",
+        )
+        config = ChunkConfig(
+            max_chars=5000,
+            max_chars_latin=5000,
+            overlap_ratio=0.0,
+            min_chunk_chars=50,
+        )
+
+        chunks = _chunk(doc, config)
+
+        assert len(chunks) == 2
+        assert chunks[0].page_no == 1
+        assert chunks[0].heading_path == "Intro"
+        assert chunks[0].paragraph_start == 0
+        assert chunks[0].paragraph_end == 0
+        assert chunks[1].page_no == 2
+        assert chunks[1].heading_path == "Methods"
+        assert chunks[1].paragraph_start == 1
+        assert chunks[1].paragraph_end == 1
+
     def test_no_paragraphs_with_text(self) -> None:
         doc = _make_doc([], raw_text="Some text")
         chunks = _chunk(doc)

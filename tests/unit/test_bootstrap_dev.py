@@ -44,6 +44,27 @@ def test_main_fails_without_python311_runtime_or_launcher(
     assert exit_code == 1
 
 
+def test_install_locked_dependencies_fails_when_project_venv_is_invalid(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lock_path = tmp_path / "requirements.lock"
+    lock_path.write_text("pytest==8.4.2\n", encoding="utf-8")
+    commands: list[list[str]] = []
+    monkeypatch.setattr(_MODULE, "_requirements_lock_path", lambda: lock_path)
+    monkeypatch.setattr(
+        _MODULE,
+        "_validate_project_virtualenv",
+        lambda: "local .venv points to a missing interpreter.",
+    )
+    monkeypatch.setattr(_MODULE, "_run", lambda cmd: commands.append(cmd) or 0)
+
+    exit_code = _MODULE._install_locked_dependencies()
+
+    assert exit_code == 1
+    assert commands == []
+
+
 def test_install_locked_dependencies_uses_lock_then_editable_no_deps(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -75,6 +96,28 @@ def test_install_locked_dependencies_uses_lock_then_editable_no_deps(
         ],
         [sys.executable, "-c", "import hnswlib"],
     ]
+
+
+def test_install_locked_dependencies_prints_explicit_next_commands(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    lock_path = tmp_path / "requirements.lock"
+    lock_path.write_text("pytest==8.4.2\n", encoding="utf-8")
+    project_root = tmp_path / "repo-root"
+    project_root.mkdir(parents=True)
+
+    monkeypatch.setattr(_MODULE, "_requirements_lock_path", lambda: lock_path)
+    monkeypatch.setattr(_MODULE, "_project_root", lambda: project_root)
+    monkeypatch.setattr(_MODULE, "_run", lambda cmd: 0)
+
+    exit_code = _MODULE._install_locked_dependencies()
+    stdout = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert f"{sys.executable} -m opendocs --help" in stdout
+    assert f"{sys.executable} -m pytest -q" in stdout
 
 
 def test_install_locked_dependencies_fails_when_lock_contains_remote_dependency(
@@ -169,3 +212,20 @@ def test_requirements_lock_has_no_remote_or_vcs_lines() -> None:
     assert all("git+" not in line for line in lines)
     assert all("http://" not in line for line in lines)
     assert all("https://" not in line for line in lines)
+
+
+def test_requirements_lock_includes_build_backend_dependencies() -> None:
+    lock_path = Path(__file__).resolve().parents[2] / "requirements.lock"
+    lines = [
+        line.strip()
+        for line in lock_path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+    assert any(line.startswith("setuptools==") for line in lines)
+    assert any(line.startswith("wheel==") for line in lines)
+
+
+def test_python_version_file_locks_host_runtime_to_311() -> None:
+    version_path = Path(__file__).resolve().parents[2] / ".python-version"
+    assert version_path.read_text(encoding="utf-8").strip() == "3.11"

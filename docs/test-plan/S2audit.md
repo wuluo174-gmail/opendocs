@@ -201,6 +201,36 @@ $ python -m pytest tests/ -v
 
 ---
 
+## 五次审查修复（2026-03-12）
+
+### 问题 #13：DOCX partial 错误索引语义不清，不能稳定审计
+
+- **严重度**：中
+- **文件**：`src/opendocs/parsers/docx_parser.py`
+- **问题**：`failed_paragraph_indices` 之前混用了“输出段落索引”和“源文档段落顺序”的语义。失败段落不会进入最终 `Paragraph` 列表，导致该字段无法稳定映射回结果对象。
+- **修复**：改为显式记录 `failed_source_paragraph_indices`，语义固定为原始 DOCX 段落流中的 source-order 索引，并同步调整错误文案与测试。
+- **新增测试**：`tests/unit/parsers/test_docx_parser.py::TestDocxParser::test_partial_status_when_some_paragraphs_fail`
+- **状态**：✅ 已修复，测试通过
+
+### 问题 #14：混合 PDF 中无文字层页面被静默吞掉并误报 success
+
+- **严重度**：高
+- **文件**：`src/opendocs/parsers/pdf_parser.py`
+- **问题**：当部分页面可提取文字、部分页面返回空文本时，原实现只在抛异常时记录 `failed_pages`，空文本页面会被静默丢弃，最终文档仍可能落为 `success`。
+- **修复**：新增 `empty_pages` 跟踪提取成功但无文本的页面；若文档同时存在文本页和空文本页，则返回 `partial_parse`，错误详情中保留 `empty_pages`。
+- **新增测试**：`tests/unit/parsers/test_pdf_parser.py::TestPdfParser::test_mixed_text_and_empty_page_is_partial`
+- **状态**：✅ 已修复，测试通过
+
+### 问题 #15：pypdf fallback 测试在缺少 fitz 时会被整体跳过
+
+- **严重度**：中
+- **文件**：`tests/unit/parsers/test_pdf_parser.py`
+- **问题**：测试模块顶层 `pytest.importorskip("fitz")` 会让整份 PDF 测试文件在无 PyMuPDF 环境下被跳过，连专门保护 `pypdf` fallback 的测试也不会执行。
+- **修复**：移除模块级 skip；保留 fixture / 单测级的按需跳过，让 fallback 用例可在无 `fitz` 环境中单独运行。
+- **状态**：✅ 已修复，测试通过
+
+---
+
 ## 修改文件清单（首次审查）
 
 | 文件 | 变更类型 |

@@ -177,7 +177,8 @@ class TestDocxParser:
         assert "2" in result.error_info
         assert result.error is not None
         assert result.error.code == "partial_parse"
-        assert result.error.details["failed_paragraph_indices"] == [2]
+        assert result.error.details["failed_source_paragraph_indices"] == [2]
+        assert "source paragraphs" in result.error_info
         assert len(result.paragraphs) == 2
         assert result.raw_text == "Title\nGood paragraph one."
         for para in result.paragraphs:
