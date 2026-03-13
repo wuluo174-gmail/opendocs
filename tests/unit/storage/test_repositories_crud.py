@@ -584,12 +584,13 @@ def test_audit_repository_query(engine: Engine) -> None:
         assert len(by_time) == 1
         assert by_time[0].audit_id == log2.audit_id
 
-        with pytest.raises(DeleteNotAllowedError, match="disabled by default"):
+        with pytest.raises(DeleteNotAllowedError, match="append-only"):
             repository.delete(log3.audit_id)
 
-        assert repository.delete(log3.audit_id, allow_delete=True) is True
-        session.commit()
-        assert repository.get_by_id(log3.audit_id) is None
+        with pytest.raises(DeleteNotAllowedError, match="append-only"):
+            repository.delete(log3.audit_id, allow_delete=True)
+
+        assert repository.get_by_id(log3.audit_id) is not None
 
 
 def test_audit_query_returns_all_without_limit(engine: Engine) -> None:

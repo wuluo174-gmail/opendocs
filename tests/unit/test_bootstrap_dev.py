@@ -180,11 +180,12 @@ def test_pyproject_has_ruff_format_baseline_config() -> None:
     }
 
 
-def test_pyproject_dev_extra_contains_locked_stack_dependencies() -> None:
+def test_pyproject_core_dependencies_include_locked_stack_baseline() -> None:
     pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-    dev_dependencies = set(data["project"]["optional-dependencies"]["dev"])
+    runtime_dependencies = set(data["project"]["dependencies"])
     required_prefixes = {
+        "PySide6>=",
         "watchdog>=",
         "hnswlib>=",
         "Jinja2>=",
@@ -193,7 +194,32 @@ def test_pyproject_dev_extra_contains_locked_stack_dependencies() -> None:
     }
 
     for prefix in required_prefixes:
+        assert any(dep.startswith(prefix) for dep in runtime_dependencies), prefix
+
+
+def test_pyproject_dev_extra_is_limited_to_dev_tooling() -> None:
+    pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    dev_dependencies = set(data["project"]["optional-dependencies"]["dev"])
+    required_prefixes = {
+        "pytest>=",
+        "pytest-qt>=",
+        "pytest-cov>=",
+        "ruff>=",
+    }
+    forbidden_prefixes = {
+        "watchdog>=",
+        "hnswlib>=",
+        "Jinja2>=",
+        "keyring>=",
+        "pyinstaller>=",
+        "PySide6>=",
+    }
+
+    for prefix in required_prefixes:
         assert any(dep.startswith(prefix) for dep in dev_dependencies), prefix
+    for prefix in forbidden_prefixes:
+        assert not any(dep.startswith(prefix) for dep in dev_dependencies), prefix
 
 
 def test_requirements_lock_header_mentions_python311_baseline() -> None:

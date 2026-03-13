@@ -62,10 +62,14 @@ class ChunkConfig(BaseModel):
     """Configuration for the chunker.
 
     ``max_chars`` defaults to 900 which suits CJK-dominant text (spec §8.3:
-    600–1200 chars).  For Latin-dominant text the chunker automatically
+    600–1200 chars). For Latin-dominant text the chunker automatically
     raises the effective limit to ``max_chars_latin`` (default 2400, ≈ 600
     tokens at 4 chars/token) so that English chunks fall within the spec
     target of 350–700 tokens.
+
+    ``min_chunk_chars`` is a soft lower bound. After the first-pass split,
+    tiny chunks are merged into an adjacent chunk from the same heading/page
+    segment whenever that can be done without crossing locator boundaries.
     """
 
     max_chars: int = Field(default=900, ge=50)
@@ -246,7 +250,7 @@ class Chunker:
                 )
                 overlap_start = self._next_overlap_start(results[-1], overlap_chars)
 
-        return results
+        return self._merge_small_chunks(doc, results, cfg.min_chunk_chars)
 
     # ------------------------------------------------------------------
 
@@ -297,6 +301,55 @@ class Chunker:
         if overlap_chars <= 0:
             return None
         return max(chunk.char_start, chunk.char_end - overlap_chars)
+
+    @staticmethod
+    def _merge_small_chunks(
+        doc: ParsedDocument,
+        results: list[ChunkResult],
+        min_chunk_chars: int,
+    ) -> list[ChunkResult]:
+        if min_chunk_chars <= 1 or len(results) <= 1:
+            return results
+
+        merged = list(results)
+        i = 0
+        while i < len(merged):
+            current = merged[i]
+            if len(current.text) >= min_chunk_chars:
+                i += 1
+                continue
+
+            prev = merged[i - 1] if i > 0 else None
+            next_chunk = merged[i + 1] if i + 1 < len(merged) else None
+
+            if prev is not None and Chunker._can_merge_chunks(prev, current):
+                prev.char_end = current.char_end
+                prev.text = doc.raw_text[prev.char_start : prev.char_end]
+                prev.paragraph_end = current.paragraph_end
+                prev.token_estimate = _estimate_tokens(prev.text)
+                merged.pop(i)
+                continue
+
+            if next_chunk is not None and Chunker._can_merge_chunks(current, next_chunk):
+                next_chunk.char_start = current.char_start
+                next_chunk.text = doc.raw_text[next_chunk.char_start : next_chunk.char_end]
+                next_chunk.paragraph_start = current.paragraph_start
+                next_chunk.page_no = current.page_no
+                next_chunk.heading_path = current.heading_path
+                next_chunk.token_estimate = _estimate_tokens(next_chunk.text)
+                merged.pop(i)
+                continue
+
+            i += 1
+
+        for new_index, chunk in enumerate(merged):
+            chunk.chunk_index = new_index
+
+        return merged
+
+    @staticmethod
+    def _can_merge_chunks(left: ChunkResult, right: ChunkResult) -> bool:
+        return left.heading_path == right.heading_path and left.page_no == right.page_no
 
     @staticmethod
     def _find_break_point(text: str, hard_end: int, search_back: int = 80) -> int:

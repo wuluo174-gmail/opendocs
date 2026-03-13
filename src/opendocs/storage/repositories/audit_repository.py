@@ -1,4 +1,4 @@
-"""Repository for audit log persistence and query."""
+"""Repository for append-only audit log persistence and query."""
 
 from __future__ import annotations
 
@@ -40,16 +40,9 @@ class AuditRepository:
         return True
 
     def delete(self, audit_id: str, *, allow_delete: bool = False) -> bool:
-        if not allow_delete:
-            raise DeleteNotAllowedError(
-                "delete is disabled by default; pass allow_delete=True explicitly"
-            )
-        audit_log = self.get_by_id(audit_id)
-        if audit_log is None:
-            return False
-        self._session.delete(audit_log)
-        self._session.flush()
-        return True
+        raise DeleteNotAllowedError(
+            "audit log deletion is forbidden; audit records must remain append-only"
+        )
 
     def query(
         self,

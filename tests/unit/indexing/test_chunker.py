@@ -199,6 +199,28 @@ class TestChunkerParagraphBoundary:
         assert chunks[1].paragraph_start == 1
         assert chunks[1].paragraph_end == 2
 
+    def test_min_chunk_chars_merges_tiny_leading_chunk_in_same_segment(self) -> None:
+        paras = [
+            Paragraph(text="H" * 20, index=0, start_char=0, end_char=20, heading_path="Intro"),
+            Paragraph(text="B" * 180, index=1, start_char=21, end_char=201, heading_path="Intro"),
+        ]
+        doc = _make_doc(paras, raw_text=("H" * 20) + "\n" + ("B" * 180))
+        config = ChunkConfig(
+            max_chars=200,
+            max_chars_latin=200,
+            overlap_ratio=0.0,
+            min_chunk_chars=50,
+        )
+
+        chunks = _chunk(doc, config)
+
+        assert len(chunks) == 1
+        assert chunks[0].char_start == 0
+        assert chunks[0].char_end == len(doc.raw_text)
+        assert chunks[0].paragraph_start == 0
+        assert chunks[0].paragraph_end == 1
+        assert chunks[0].text == doc.raw_text
+
 
 class TestChunkerHeadingBoundary:
     def test_heading_change_forces_split(self) -> None:
@@ -225,6 +247,38 @@ class TestChunkerHeadingBoundary:
         # Different heading_path → forced split
         assert len(chunks) == 2
         assert chunks[0].heading_path == "Intro"
+        assert chunks[1].heading_path == "Chapter 1"
+
+    def test_min_chunk_chars_does_not_cross_heading_boundary(self) -> None:
+        paras = [
+            Paragraph(
+                text="A" * 20,
+                index=0,
+                start_char=0,
+                end_char=20,
+                heading_path="Intro",
+            ),
+            Paragraph(
+                text="B" * 180,
+                index=1,
+                start_char=21,
+                end_char=201,
+                heading_path="Chapter 1",
+            ),
+        ]
+        doc = _make_doc(paras, raw_text=("A" * 20) + "\n" + ("B" * 180))
+        config = ChunkConfig(
+            max_chars=200,
+            max_chars_latin=200,
+            overlap_ratio=0.0,
+            min_chunk_chars=50,
+        )
+
+        chunks = _chunk(doc, config)
+
+        assert len(chunks) == 2
+        assert chunks[0].heading_path == "Intro"
+        assert chunks[0].text == "A" * 20
         assert chunks[1].heading_path == "Chapter 1"
 
 
@@ -342,6 +396,28 @@ class TestChunkerLongParagraph:
         assert chunks[1].paragraph_start == 0
         assert chunks[1].paragraph_end == 1
         assert chunks[1].heading_path == "H"
+
+    def test_min_chunk_chars_merges_tiny_trailing_split(self) -> None:
+        long_text = "X" * 230
+        paras = [
+            Paragraph(text=long_text, index=0, start_char=0, end_char=len(long_text)),
+        ]
+        doc = _make_doc(paras, raw_text=long_text)
+        config = ChunkConfig(
+            max_chars=200,
+            max_chars_latin=200,
+            overlap_ratio=0.0,
+            min_chunk_chars=50,
+        )
+
+        chunks = _chunk(doc, config)
+
+        assert len(chunks) == 1
+        assert chunks[0].char_start == 0
+        assert chunks[0].char_end == len(long_text)
+        assert chunks[0].paragraph_start == 0
+        assert chunks[0].paragraph_end == 0
+        assert chunks[0].text == long_text
 
 
 class TestChunkerNaturalBreak:
