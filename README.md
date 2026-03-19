@@ -32,7 +32,8 @@ Windows PowerShell 请将 `.venv/bin/` 替换为 `.venv\\Scripts\\`。
 
 该脚本只会安装 `requirements.lock` 中锁定的第三方依赖，并把当前仓库作为本地 editable 包安装；不会再从远端仓库拉取 `opendocs` 自身代码。
 `bootstrap_dev.py` 会校验当前基线的 Python 与安装流程，并额外验证 `hnswlib` 可导入，避免锁定技术栈在 S0 就静默漂移。
-`pyproject.toml` 的 `project.dependencies` 已同步声明锁定技术栈基线；`pip install -e .` 会得到运行基线，`pip install -e '.[dev]'` 只是在此基础上追加测试与静态检查工具。
+`pyproject.toml` 的 `project.dependencies` 已同步声明运行时依赖基线；其中 `charset-normalizer` 已纳入锁定基线，确保直接安装和 `bootstrap_dev.py` 安装都具备一致的文本编码探测能力。`pip install -e .` 会得到运行基线，`pip install -e '.[dev]'` 只是在此基础上追加测试与静态检查工具。
+`bootstrap_dev.py` 在安装前还会校验 `requirements.lock` 是否完整覆盖 `pyproject.toml` 里的构建依赖、运行依赖和 `dev` 依赖，避免“元数据声明了一套、锁文件安装了另一套”的再次漂移。
 项目根目录的 `.python-version` 固定为 `3.11`，供本机解释器管理器、编辑器和终端识别。
 本项目不提供 Docker / devcontainer 运行时；如果仓库里已有旧 `.venv` 且它指向不存在的解释器，先移除旧 `.venv`，再用宿主机原生 `Python 3.11` 重建。
 

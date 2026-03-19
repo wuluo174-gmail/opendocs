@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from opendocs.domain.models import AuditLogModel
-from opendocs.exceptions import DeleteNotAllowedError
+from opendocs.exceptions import DeleteNotAllowedError, StorageError
 
 
 class AuditRepository:
@@ -30,14 +30,9 @@ class AuditRepository:
         detail_json: dict[str, object],
         result: str | None = None,
     ) -> bool:
-        audit_log = self.get_by_id(audit_id)
-        if audit_log is None:
-            return False
-        audit_log.detail_json = detail_json
-        if result is not None:
-            audit_log.result = result
-        self._session.flush()
-        return True
+        raise StorageError(
+            "audit logs are append-only; write a new audit event instead of updating detail/result"
+        )
 
     def delete(self, audit_id: str, *, allow_delete: bool = False) -> bool:
         raise DeleteNotAllowedError(

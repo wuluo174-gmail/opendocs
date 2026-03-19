@@ -70,3 +70,5 @@
 - 修复主规范 7.1 目录轻微偏差：新增 `dist/.gitkeep`，并在 `.gitignore` 中仅豁免该占位文件，保证仓库可追踪 `dist/` 目录骨架且不引入构建产物。
 - 修复 CI 格式门禁漂移：执行 `ruff format` 对齐 `src/opendocs/domain/models.py` 与 `tests/unit/storage/test_migrations.py`，`ruff format --check .` 恢复通过。
 - 修复 README 在 zsh 的安装命令复现问题：将 `pip install -e .[dev]` 调整为可直接执行的 `python3.11 -m pip install -e '.[dev]'`，并补充 Windows PowerShell 对应写法。
+- 2026-03-13：将 `charset-normalizer>=3.3,<4.0` 恢复到 `pyproject.toml` 运行时依赖，并与 `requirements.lock` 中的 `charset-normalizer==3.4.5`、README、ADR-0008 统一为锁定运行基线，消除两条安装路径的依赖集合分叉。
+- 2026-03-13：收紧 `bootstrap_dev.py` 相关单测的职责边界；流程类测试显式跳过“锁文件覆盖率”校验，避免被新增的依赖一致性检查误伤，同时新增断言保护 `charset-normalizer` 仍在直接依赖集合中。

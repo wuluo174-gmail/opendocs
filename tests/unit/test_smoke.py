@@ -99,24 +99,22 @@ def test_stage_scaffold_scripts_exist() -> None:
         assert (scripts_dir / script_name).exists()
 
 
-def test_generate_fixture_corpus_placeholder_cli_contract() -> None:
+def test_generate_fixture_corpus_cli_contract() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     script = repo_root / "scripts" / "generate_fixture_corpus.py"
     completed = subprocess.run(
         [
             sys.executable,
             str(script),
-            "--profile",
-            "acceptance",
-            "--output",
-            ".tmp/corpus",
+            "--help",
         ],
         check=False,
         capture_output=True,
         text=True,
     )
-    assert completed.returncode == 2
-    assert "requested profile=acceptance output=.tmp/corpus" in completed.stdout
+    assert completed.returncode == 0
+    assert "--profile" in completed.stdout
+    assert "--output" in completed.stdout
 
 
 def test_cli_uses_explicit_config_root_for_logs(tmp_path: Path) -> None:

@@ -152,9 +152,7 @@ class DocxParser(BaseParser):
         # Determine parse status
         failure_messages: list[str] = []
         if failed_source_paras:
-            failure_messages.append(
-                f"failed source paragraphs at indices: {failed_source_paras}"
-            )
+            failure_messages.append(f"failed source paragraphs at indices: {failed_source_paras}")
         if failed_tables:
             failure_messages.append(f"failed table blocks: {failed_tables}")
 

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import platform
+import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 _LOCKED_IMPORT_CHECKS = ("hnswlib",)
@@ -22,6 +24,10 @@ def _project_root() -> Path:
 
 def _requirements_lock_path() -> Path:
     return _project_root() / "requirements.lock"
+
+
+def _pyproject_path() -> Path:
+    return _project_root() / "pyproject.toml"
 
 
 def _project_venv_python_path() -> Path:
@@ -91,6 +97,61 @@ def _validate_lockfile_contract(lock_path: Path) -> str | None:
     return None
 
 
+def _normalize_package_name(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _extract_requirement_name(requirement: str) -> str:
+    token = requirement.strip()
+    for separator in ("[", "<", ">", "=", "!", "~", ";", " "):
+        if separator in token:
+            token = token.split(separator, 1)[0]
+    return _normalize_package_name(token)
+
+
+def _load_direct_dependency_names(pyproject_path: Path) -> set[str]:
+    with pyproject_path.open("rb") as fh:
+        data = tomllib.load(fh)
+
+    build_requires = data.get("build-system", {}).get("requires", [])
+    project = data.get("project", {})
+    runtime_deps = project.get("dependencies", [])
+    dev_deps = project.get("optional-dependencies", {}).get("dev", [])
+
+    return {
+        _extract_requirement_name(requirement)
+        for requirement in [*build_requires, *runtime_deps, *dev_deps]
+        if requirement.strip()
+    }
+
+
+def _load_locked_package_names(lock_path: Path) -> set[str]:
+    package_names: set[str] = set()
+    for raw_line in lock_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        package_name = line.split("==", 1)[0].strip()
+        package_names.add(_normalize_package_name(package_name))
+    return package_names
+
+
+def _validate_lockfile_covers_pyproject(lock_path: Path, pyproject_path: Path) -> str | None:
+    if not pyproject_path.exists():
+        return f"pyproject not found: {pyproject_path}"
+
+    declared = _load_direct_dependency_names(pyproject_path)
+    locked = _load_locked_package_names(lock_path)
+    missing = sorted(declared - locked)
+    if missing:
+        return (
+            "requirements lock is missing direct dependencies declared in pyproject: "
+            + ", ".join(missing)
+            + ". Regenerate requirements.lock before bootstrapping."
+        )
+    return None
+
+
 def _is_python_311() -> bool:
     return sys.version_info.major == 3 and sys.version_info.minor == 11
 
@@ -117,12 +178,17 @@ def _delegate_to_python311_if_needed(argv: list[str]) -> int | None:
 def _install_locked_dependencies() -> int:
     project_root = _project_root()
     lock_path = _requirements_lock_path()
+    pyproject_path = _pyproject_path()
     if not lock_path.exists():
         print(f"[bootstrap] failed: requirements lock not found: {lock_path}")
         return 1
     validation_error = _validate_lockfile_contract(lock_path)
     if validation_error is not None:
         print(f"[bootstrap] failed: {validation_error}")
+        return 1
+    coverage_error = _validate_lockfile_covers_pyproject(lock_path, pyproject_path)
+    if coverage_error is not None:
+        print(f"[bootstrap] failed: {coverage_error}")
         return 1
     venv_error = _validate_project_virtualenv()
     if venv_error is not None:

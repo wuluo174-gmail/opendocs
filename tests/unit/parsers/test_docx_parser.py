@@ -8,6 +8,7 @@ import pytest
 
 docx = pytest.importorskip("docx")
 
+from opendocs.parsers import docx_parser as docx_parser_module  # noqa: E402
 from opendocs.parsers.docx_parser import DocxParser  # noqa: E402
 
 
@@ -144,7 +145,6 @@ class TestDocxParser:
     def test_partial_status_when_some_paragraphs_fail(self, tmp_path: Path) -> None:
         """S2-T04: DOCX with some unreadable paragraphs should yield partial."""
         from docx import Document  # type: ignore[import-untyped]
-        from opendocs.parsers import docx_parser as docx_parser_module
 
         doc = Document()
         doc.add_heading("Title", level=1)

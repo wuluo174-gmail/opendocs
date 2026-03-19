@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from opendocs.domain.models import MemoryItemModel
-from opendocs.exceptions import DeleteNotAllowedError
+from opendocs.exceptions import DeleteNotAllowedError, StorageError
 from opendocs.utils.time import utcnow_naive
 
 
@@ -15,6 +15,8 @@ class MemoryRepository:
         self._session = session
 
     def create(self, memory_item: MemoryItemModel) -> MemoryItemModel:
+        if memory_item.memory_type == "M0":
+            raise StorageError("M0 session memory must not be persisted; store it in-process only")
         self._session.add(memory_item)
         self._session.flush()
         return memory_item

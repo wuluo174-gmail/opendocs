@@ -46,7 +46,7 @@
 
 ### 仓储层
 - 7 个 Repository 覆盖完整 CRUD，支持后续应用服务复用
-- 删除操作默认禁用（需显式 `allow_delete=True`），符合规范 §4.5
+- 删除策略按风险分层：业务仓储默认禁用（需显式 `allow_delete=True`），审计仓储完全禁删并保持 append-only
 - MemoryRepository 拒绝 M0 持久化（规范 §4.4）
 - PlanRepository 状态机保护：外部不可直接设 `executed` 状态
 
@@ -131,6 +131,11 @@ S2：解析器与切片器
 - **改善**：为 `Document.created_at/modified_at` 添加注释，明确 S3 必须传入文件系统时间而非默认值
 - **测试**：新增 chunk_index 非负约束测试（ORM + SQL 各 1 个）、migration 时间格式测试
 - 全量测试 98 → 101，存储层测试 73 → 76
+
+### 2026-03-13 审查收口修复
+- **修复**：`MemoryRepository.create()` 新增 `M0` 持久化守卫，直接仓储调用也会拒绝将会话记忆落盘，对齐主规范 §4.4“`M0` 会话记忆不持久化”
+- **修复**：`AuditRepository` 收口为 append-only：`update_detail()` 直接拒绝原地改写，`delete()` 始终拒绝删除，避免仓储层绕过审计红线
+- **测试**：补充仓储层单测，覆盖 `MemoryRepository` 直接拒绝 `M0` 入库，以及 `AuditRepository` 的“更新拒绝 / 删除始终拒绝”路径
 
 ## 9. ADR 索引
 

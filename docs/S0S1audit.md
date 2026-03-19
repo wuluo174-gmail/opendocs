@@ -123,7 +123,7 @@
 | RelationRepository | PASS | get_by_id, list_by_source | update_weight | allow_delete | PASS |
 | MemoryRepository | PASS | get_by_id, get_by_scope_key, list_active_by_scope | update_status | allow_delete | M0 拒绝持久化 |
 | PlanRepository | PASS | get_by_id, list_by_status | update_status(含状态机守卫) | allow_delete | executed 状态必须经 FileOperationService |
-| AuditRepository | PASS | get_by_id, query(多维) | update_detail | allow_delete | PASS |
+| AuditRepository | PASS | get_by_id, query(多维) | 不提供原地更新 | 不提供删除 | append-only，仅新增与查询 |
 
 ### S1-T04: 样例 seed 数据脚本
 
@@ -160,7 +160,7 @@
 
 | 红线 | 结果 |
 |------|------|
-| delete 默认禁用 | PASS — 所有 7 个仓储 delete 方法均需 `allow_delete=True` |
+| delete 默认禁用 | PASS — 6 个业务仓储需显式 `allow_delete=True`，`AuditRepository` 完全禁删 |
 | 未确认不执行物理写操作 | PASS — `FileOperationService` 强制 draft→approved→executed |
 | M0 不持久化 | PASS — `MemoryRepository.create()` 拒绝 M0 |
 | API key 不落盘 | PASS — settings.example.toml 无密钥字段；RedactFilter 脱敏日志 |

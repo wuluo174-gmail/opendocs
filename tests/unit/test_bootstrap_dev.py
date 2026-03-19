@@ -77,6 +77,7 @@ def test_install_locked_dependencies_uses_lock_then_editable_no_deps(
     commands: list[list[str]] = []
     monkeypatch.setattr(_MODULE, "_requirements_lock_path", lambda: lock_path)
     monkeypatch.setattr(_MODULE, "_project_root", lambda: project_root)
+    monkeypatch.setattr(_MODULE, "_validate_lockfile_covers_pyproject", lambda *_: None)
     monkeypatch.setattr(_MODULE, "_run", lambda cmd: commands.append(cmd) or 0)
 
     exit_code = _MODULE._install_locked_dependencies()
@@ -110,6 +111,7 @@ def test_install_locked_dependencies_prints_explicit_next_commands(
 
     monkeypatch.setattr(_MODULE, "_requirements_lock_path", lambda: lock_path)
     monkeypatch.setattr(_MODULE, "_project_root", lambda: project_root)
+    monkeypatch.setattr(_MODULE, "_validate_lockfile_covers_pyproject", lambda *_: None)
     monkeypatch.setattr(_MODULE, "_run", lambda cmd: 0)
 
     exit_code = _MODULE._install_locked_dependencies()
@@ -139,6 +141,41 @@ def test_install_locked_dependencies_fails_when_lock_contains_remote_dependency(
     assert commands == []
 
 
+def test_install_locked_dependencies_fails_when_lock_misses_pyproject_dependency(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lock_path = tmp_path / "requirements.lock"
+    lock_path.write_text("pytest==8.4.2\nruff==0.12.7\nsetuptools==82.0.1\nwheel==0.46.3\n")
+    pyproject_path = tmp_path / "pyproject.toml"
+    pyproject_path.write_text(
+        """
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "demo"
+version = "0.1.0"
+dependencies = ["PySide6>=6.8,<7.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.2,<9.0", "ruff>=0.5,<1.0"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(_MODULE, "_requirements_lock_path", lambda: lock_path)
+    monkeypatch.setattr(_MODULE, "_pyproject_path", lambda: pyproject_path)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(_MODULE, "_run", lambda cmd: commands.append(cmd) or 0)
+
+    exit_code = _MODULE._install_locked_dependencies()
+
+    assert exit_code == 1
+    assert commands == []
+
+
 def test_install_locked_dependencies_fails_when_hnswlib_import_check_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -156,6 +193,7 @@ def test_install_locked_dependencies_fails_when_hnswlib_import_check_fails(
 
     monkeypatch.setattr(_MODULE, "_requirements_lock_path", lambda: lock_path)
     monkeypatch.setattr(_MODULE, "_project_root", lambda: project_root)
+    monkeypatch.setattr(_MODULE, "_validate_lockfile_covers_pyproject", lambda *_: None)
     monkeypatch.setattr(_MODULE, "_run", _fake_run)
 
     exit_code = _MODULE._install_locked_dependencies()
@@ -185,6 +223,7 @@ def test_pyproject_core_dependencies_include_locked_stack_baseline() -> None:
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     runtime_dependencies = set(data["project"]["dependencies"])
     required_prefixes = {
+        "charset-normalizer>=",
         "PySide6>=",
         "watchdog>=",
         "hnswlib>=",
@@ -250,6 +289,15 @@ def test_requirements_lock_includes_build_backend_dependencies() -> None:
 
     assert any(line.startswith("setuptools==") for line in lines)
     assert any(line.startswith("wheel==") for line in lines)
+
+
+def test_requirements_lock_covers_all_pyproject_direct_dependencies() -> None:
+    pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    lock_path = Path(__file__).resolve().parents[2] / "requirements.lock"
+
+    error = _MODULE._validate_lockfile_covers_pyproject(lock_path, pyproject_path)
+
+    assert error is None
 
 
 def test_python_version_file_locks_host_runtime_to_311() -> None:

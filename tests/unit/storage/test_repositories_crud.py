@@ -19,7 +19,7 @@ from opendocs.domain.models import (
     MemoryItemModel,
     RelationEdgeModel,
 )
-from opendocs.exceptions import DeleteNotAllowedError, PlanNotApprovedError
+from opendocs.exceptions import DeleteNotAllowedError, PlanNotApprovedError, StorageError
 from opendocs.storage.repositories import (
     AuditRepository,
     ChunkRepository,
@@ -339,6 +339,28 @@ def test_memory_repository_crud(engine: Engine) -> None:
         assert repository.get_by_id(memory.memory_id) is None
 
 
+def test_memory_repository_rejects_m0_persistence(engine: Engine) -> None:
+    with Session(engine) as session:
+        repository = MemoryRepository(session)
+
+        with pytest.raises(StorageError, match="M0 session memory must not be persisted"):
+            repository.create(
+                MemoryItemModel(
+                    memory_id=str(uuid.uuid4()),
+                    memory_type="M0",
+                    scope_type="session",
+                    scope_id="session-001",
+                    key="status",
+                    content="ready",
+                    importance=0.5,
+                    status="active",
+                )
+            )
+
+        session.rollback()
+        assert session.query(MemoryItemModel).count() == 0
+
+
 def test_memory_list_active_by_scope(engine: Engine) -> None:
     with Session(engine) as session:
         repository = MemoryRepository(session)
@@ -550,19 +572,18 @@ def test_audit_repository_query(engine: Engine) -> None:
         repository.create(log3)
         session.commit()
 
-        assert (
+        with pytest.raises(StorageError, match="append-only"):
             repository.update_detail(
                 log2.audit_id,
                 detail_json={"file_path": "C:/docs/b.md", "task_id": "task-1", "updated": True},
                 result="failure",
             )
-            is True
-        )
-        session.commit()
-        updated_log2 = repository.get_by_id(log2.audit_id)
-        assert updated_log2 is not None
-        assert updated_log2.result == "failure"
-        assert updated_log2.detail_json["updated"] is True
+
+        session.rollback()
+        unchanged_log2 = repository.get_by_id(log2.audit_id)
+        assert unchanged_log2 is not None
+        assert unchanged_log2.result == "success"
+        assert unchanged_log2.detail_json == {"file_path": "C:/docs/b.md", "task_id": "task-1"}
 
         by_trace = repository.query(trace_id="trace-task-1")
         assert len(by_trace) == 2

@@ -1,7 +1,7 @@
 """Encoding detection utilities for text-based parsers.
 
-Tries UTF-8 first; on failure uses charset-normalizer to detect the real
-encoding (common for GBK/GB2312/GB18030 Chinese files).
+Tries UTF-8 first; then uses the locked-baseline charset-normalizer detector
+before falling back to explicit CJK encodings.
 """
 
 from __future__ import annotations
@@ -20,8 +20,10 @@ def read_text_with_fallback(file_path: Path) -> str:
 
     Strategy:
     1. Try UTF-8 (strict) — covers the vast majority of modern files.
-    2. On ``UnicodeDecodeError``, use *charset-normalizer* to detect.
-    3. If detection confidence is low, probe common CJK encodings.
+    2. On ``UnicodeDecodeError``, use *charset-normalizer* from the locked baseline.
+    3. If auto-detection is unavailable because the environment is broken, or
+       confidence is low, probe common
+       CJK encodings.
     4. Last resort: ``utf-8`` with ``errors="replace"``.
     """
     raw = file_path.read_bytes()
@@ -34,7 +36,8 @@ def read_text_with_fallback(file_path: Path) -> str:
     except UnicodeDecodeError:
         pass
 
-    # Auto-detect via charset-normalizer
+    # Auto-detect via charset-normalizer from the locked runtime baseline.
+    # Keep the ImportError fallback as a defensive guard for broken envs.
     detected = _detect_with_charset_normalizer(raw)
     if detected is not None:
         return detected

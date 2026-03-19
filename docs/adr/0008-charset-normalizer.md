@@ -1,4 +1,4 @@
-# ADR-0008: 引入 charset-normalizer 处理非 UTF-8 编码
+# ADR-0008: 将 charset-normalizer 纳入锁定运行基线处理非 UTF-8 编码
 
 - 状态：已接受
 - 日期：2026-03-08
@@ -10,11 +10,11 @@
 
 ## 决策
 
-引入 `charset-normalizer`（纯 Python，无 C 依赖）作为编码检测后备：
+将 `charset-normalizer`（纯 Python，无 C 依赖）纳入锁定运行基线，作为编码检测后备：
 
 1. 优先尝试 UTF-8 strict 解码（零开销快路径）。
-2. 失败时用 charset-normalizer 自动检测。
-3. 检测置信度不足时，逐一探测常见 CJK 编码（gb18030, gbk, big5, euc-kr, shift_jis）。
+2. 失败时用 `charset-normalizer` 自动检测。
+3. 若检测置信度不足，逐一探测常见 CJK 编码（gb18030, gbk, big5, euc-kr, shift_jis）。
 4. 最后兜底 utf-8 with errors="replace"。
 
 ## 替代方案
@@ -25,10 +25,10 @@
 
 ## 影响
 
-- 新增运行时依赖：`charset-normalizer>=3.3,<4.0`（已加入 pyproject.toml）。
+- 已纳入 `pyproject.toml` 与 `requirements.lock`，统一 `bootstrap_dev.py` 和直接安装路径的依赖集合。
 - 仅用于 `src/opendocs/parsers/_encoding.py`，不扩散到其他模块。
-- 对打包无额外影响（纯 Python）。
+- 保留 ImportError 防御式 fallback；若极端环境缺失该包，系统仍可通过显式 CJK 编码探测工作，但这不再是标准基线形态。
 
 ## 回退方案
 
-移除 charset-normalizer 后，`_encoding.py` 的探测仍可通过硬编码 CJK 编码列表工作，只是自动检测准确度下降。
+后续若调整该依赖版本或移出基线，必须同步修改 `pyproject.toml`、`requirements.lock`、`bootstrap_dev.py` 一致性校验与本 ADR。
