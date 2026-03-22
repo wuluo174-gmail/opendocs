@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/unit/provider tests/unit/qa tests/unit/generation -q)",
+      "Bash(git add:*)"
+    ]
+  }
+}

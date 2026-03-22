@@ -42,12 +42,18 @@ class ProviderSettings(BaseModel):
     embedding_provider: str = "local"
 
 
+class QASettings(BaseModel):
+    min_evidence: int = 1
+    min_score: float = 0.15
+
+
 class OpenDocsSettings(BaseModel):
     app: AppSettings = Field(default_factory=AppSettings)
     index: IndexSettings = Field(default_factory=IndexSettings)
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     provider: ProviderSettings = Field(default_factory=ProviderSettings)
+    qa: QASettings = Field(default_factory=QASettings)
 
 
 def get_user_data_dir() -> Path:

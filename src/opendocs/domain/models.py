@@ -36,6 +36,10 @@ AUDIT_OPERATIONS = frozenset(
         "memory_write",
         "search_query",
         "answer_generate",
+        # S5 additions
+        "qa_answer",
+        "summary_generate",
+        "insight_extract",
         # S3 additions
         "add_source",
         "update_source",
