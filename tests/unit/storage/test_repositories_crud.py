@@ -18,6 +18,7 @@ from opendocs.domain.models import (
     KnowledgeItemModel,
     MemoryItemModel,
     RelationEdgeModel,
+    SourceRootModel,
 )
 from opendocs.exceptions import DeleteNotAllowedError, PlanNotApprovedError, StorageError
 from opendocs.storage.repositories import (
@@ -28,7 +29,9 @@ from opendocs.storage.repositories import (
     MemoryRepository,
     PlanRepository,
     RelationRepository,
+    SourceRepository,
 )
+from opendocs.utils.path_facts import derive_directory_facts
 from opendocs.utils.time import utcnow_naive
 
 
@@ -36,13 +39,43 @@ def _now() -> datetime:
     return utcnow_naive()
 
 
-def _new_document(path: str) -> DocumentModel:
+def _add_source_root(session: Session, *, path: str) -> SourceRootModel:
     now = _now()
+    source_root = SourceRootModel(
+        source_root_id=str(uuid.uuid4()),
+        path=path,
+        label="test source",
+        exclude_rules_json={},
+        recursive=True,
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(source_root)
+    session.flush()
+    return source_root
+
+
+def _new_document(
+    path: str,
+    *,
+    source_root_id: str,
+    file_identity: str | None = None,
+    is_deleted_from_fs: bool = False,
+) -> DocumentModel:
+    now = _now()
+    directory_path, relative_directory_path = derive_directory_facts(
+        path,
+        path.split("/")[-1],
+    )
     return DocumentModel(
         doc_id=str(uuid.uuid4()),
         path=path,
         relative_path=path.split("/")[-1],
-        source_root_id=str(uuid.uuid4()),
+        directory_path=directory_path,
+        relative_directory_path=relative_directory_path,
+        file_identity=file_identity,
+        source_root_id=source_root_id,
         source_path=path,
         hash_sha256="b" * 64,
         title="Document",
@@ -52,6 +85,7 @@ def _new_document(path: str) -> DocumentModel:
         modified_at=now,
         parse_status="success",
         sensitivity="internal",
+        is_deleted_from_fs=is_deleted_from_fs,
     )
 
 
@@ -69,7 +103,8 @@ def _new_chunk(doc_id: str, *, chunk_index: int = 0) -> ChunkModel:
 def test_document_repository_crud(engine: Engine) -> None:
     with Session(engine) as session:
         repository = DocumentRepository(session)
-        document = _new_document("C:/docs/doc.md")
+        source_root = _add_source_root(session, path="C:/docs")
+        document = _new_document("C:/docs/doc.md", source_root_id=source_root.source_root_id)
 
         repository.create(document)
         session.commit()
@@ -92,11 +127,56 @@ def test_document_repository_crud(engine: Engine) -> None:
         assert repository.get_by_id(document.doc_id) is None
 
 
+def test_document_repository_get_by_file_identity(engine: Engine) -> None:
+    with Session(engine) as session:
+        repository = DocumentRepository(session)
+        source_root = _add_source_root(session, path="C:/docs")
+        document = _new_document(
+            "C:/docs/identity.md",
+            source_root_id=source_root.source_root_id,
+            file_identity="42:99",
+        )
+
+        repository.create(document)
+        session.commit()
+
+        fetched = repository.get_by_file_identity("42:99")
+        assert fetched is not None
+        assert fetched.doc_id == document.doc_id
+
+
+def test_source_repository_updates_default_metadata(engine: Engine) -> None:
+    with Session(engine) as session:
+        repository = SourceRepository(session)
+        source_root = _add_source_root(session, path="C:/docs")
+        session.commit()
+
+        changed = repository.update(
+            source_root,
+            default_category="project",
+            default_tags_json=["roadmap", "alpha", "roadmap"],
+            default_sensitivity="sensitive",
+        )
+        session.commit()
+
+        assert changed is True
+        refreshed = repository.get_by_id(source_root.source_root_id)
+        assert refreshed is not None
+        assert refreshed.default_category == "project"
+        assert refreshed.default_tags_json == ["roadmap", "alpha", "roadmap"]
+        assert refreshed.default_sensitivity == "sensitive"
+        assert refreshed.source_config_rev == 2
+
+
 def test_document_update_title_preserves_modified_at(engine: Engine) -> None:
     """update_title must NOT change modified_at — it is file-system mtime (§8.1.1)."""
     with Session(engine) as session:
         repository = DocumentRepository(session)
-        document = _new_document("C:/docs/refresh-modified.md")
+        source_root = _add_source_root(session, path="C:/docs")
+        document = _new_document(
+            "C:/docs/refresh-modified.md",
+            source_root_id=source_root.source_root_id,
+        )
         repository.create(document)
         session.commit()
 
@@ -114,7 +194,8 @@ def test_document_update_indexed_at(engine: Engine) -> None:
     """update_indexed_at sets indexed_at but NOT modified_at (§8.1.1)."""
     with Session(engine) as session:
         repository = DocumentRepository(session)
-        document = _new_document("C:/docs/indexed.md")
+        source_root = _add_source_root(session, path="C:/docs")
+        document = _new_document("C:/docs/indexed.md", source_root_id=source_root.source_root_id)
         repository.create(document)
         session.commit()
 
@@ -134,7 +215,8 @@ def test_document_mark_deleted_from_fs(engine: Engine) -> None:
     """mark_deleted_from_fs must toggle is_deleted_from_fs flag."""
     with Session(engine) as session:
         repository = DocumentRepository(session)
-        document = _new_document("C:/docs/mark_del.md")
+        source_root = _add_source_root(session, path="C:/docs")
+        document = _new_document("C:/docs/mark_del.md", source_root_id=source_root.source_root_id)
         repository.create(document)
         session.commit()
         assert repository.get_by_id(document.doc_id).is_deleted_from_fs is False
@@ -152,7 +234,8 @@ def test_document_mark_deleted_from_fs(engine: Engine) -> None:
 
 def test_chunk_repository_crud(engine: Engine) -> None:
     with Session(engine) as session:
-        document = _new_document("C:/docs/chunk.md")
+        source_root = _add_source_root(session, path="C:/docs")
+        document = _new_document("C:/docs/chunk.md", source_root_id=source_root.source_root_id)
         DocumentRepository(session).create(document)
         session.flush()
 
@@ -190,7 +273,11 @@ def test_chunk_repository_crud(engine: Engine) -> None:
 def test_chunk_delete_by_doc_id(engine: Engine) -> None:
     """delete_by_doc_id must remove all chunks for a document."""
     with Session(engine) as session:
-        document = _new_document("C:/docs/chunk_batch_del.md")
+        source_root = _add_source_root(session, path="C:/docs")
+        document = _new_document(
+            "C:/docs/chunk_batch_del.md",
+            source_root_id=source_root.source_root_id,
+        )
         DocumentRepository(session).create(document)
         session.flush()
 
@@ -212,7 +299,11 @@ def test_chunk_delete_by_doc_id(engine: Engine) -> None:
 
 def test_knowledge_repository_crud(engine: Engine) -> None:
     with Session(engine) as session:
-        document = _new_document("C:/docs/knowledge.md")
+        source_root = _add_source_root(session, path="C:/docs")
+        document = _new_document(
+            "C:/docs/knowledge.md",
+            source_root_id=source_root.source_root_id,
+        )
         DocumentRepository(session).create(document)
         chunk = _new_chunk(document.doc_id)
         ChunkRepository(session).create(chunk)
@@ -256,7 +347,11 @@ def test_knowledge_repository_crud(engine: Engine) -> None:
 
 def test_relation_repository_crud(engine: Engine) -> None:
     with Session(engine) as session:
-        document = _new_document("C:/docs/relation.md")
+        source_root = _add_source_root(session, path="C:/docs")
+        document = _new_document(
+            "C:/docs/relation.md",
+            source_root_id=source_root.source_root_id,
+        )
         DocumentRepository(session).create(document)
         chunk = _new_chunk(document.doc_id)
         ChunkRepository(session).create(chunk)
@@ -644,9 +739,10 @@ def test_document_list_all_returns_all_without_limit(engine: Engine) -> None:
     """list_all() with no limit must return all documents, not just 100."""
     with Session(engine) as session:
         repository = DocumentRepository(session)
+        source_root = _add_source_root(session, path="C:/docs")
         paths = [f"C:/docs/list_all_{i:03d}.md" for i in range(5)]
         for path in paths:
-            repository.create(_new_document(path))
+            repository.create(_new_document(path, source_root_id=source_root.source_root_id))
         session.commit()
 
         all_docs = repository.list_all()
@@ -657,10 +753,11 @@ def test_document_list_all_returns_all_without_limit(engine: Engine) -> None:
 
 
 def test_document_get_by_path(engine: Engine) -> None:
-    """get_by_path must locate a document by its unique path."""
+    """get_by_path must resolve the current active document for a path."""
     with Session(engine) as session:
         repository = DocumentRepository(session)
-        doc = _new_document("C:/docs/by_path_test.md")
+        source_root = _add_source_root(session, path="C:/docs")
+        doc = _new_document("C:/docs/by_path_test.md", source_root_id=source_root.source_root_id)
         repository.create(doc)
         session.commit()
 
@@ -672,10 +769,30 @@ def test_document_get_by_path(engine: Engine) -> None:
         assert missing is None
 
 
+def test_document_get_by_path_ignores_deleted_lineage(engine: Engine) -> None:
+    with Session(engine) as session:
+        repository = DocumentRepository(session)
+        source_root = _add_source_root(session, path="C:/docs")
+        deleted = _new_document(
+            "C:/docs/reused.md",
+            source_root_id=source_root.source_root_id,
+            is_deleted_from_fs=True,
+        )
+        active = _new_document("C:/docs/reused.md", source_root_id=source_root.source_root_id)
+        repository.create(deleted)
+        repository.create(active)
+        session.commit()
+
+        found = repository.get_by_path("C:/docs/reused.md")
+        assert found is not None
+        assert found.doc_id == active.doc_id
+
+
 def test_cascade_delete_removes_chunks_and_knowledge(engine: Engine) -> None:
     """Deleting a document must cascade-delete its chunks and knowledge items."""
     with Session(engine) as session:
-        doc = _new_document("C:/docs/cascade.md")
+        source_root = _add_source_root(session, path="C:/docs")
+        doc = _new_document("C:/docs/cascade.md", source_root_id=source_root.source_root_id)
         DocumentRepository(session).create(doc)
         session.flush()
 
@@ -711,7 +828,8 @@ def test_cascade_delete_removes_chunks_and_knowledge(engine: Engine) -> None:
 def test_cascade_delete_nullifies_relation_edge_evidence(engine: Engine) -> None:
     """Deleting a chunk must SET NULL the evidence_chunk_id on relation edges."""
     with Session(engine) as session:
-        doc = _new_document("C:/docs/cascade_rel.md")
+        source_root = _add_source_root(session, path="C:/docs")
+        doc = _new_document("C:/docs/cascade_rel.md", source_root_id=source_root.source_root_id)
         DocumentRepository(session).create(doc)
         session.flush()
 

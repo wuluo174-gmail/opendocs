@@ -44,6 +44,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "opendocs.storage.schema" = ["*.sql"]
+"opendocs.retrieval.assets" = ["*.json"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

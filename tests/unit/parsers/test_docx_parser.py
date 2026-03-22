@@ -104,6 +104,24 @@ class TestDocxParser:
             extracted = result.raw_text[para.start_char : para.end_char]
             assert extracted == para.text
 
+    def test_core_properties_metadata_extracted(self, tmp_path: Path) -> None:
+        from docx import Document  # type: ignore[import-untyped]
+
+        doc = Document()
+        doc.core_properties.title = "Spec"
+        doc.core_properties.category = "Project"
+        doc.core_properties.keywords = "Roadmap; Alpha, launch"
+        doc.add_heading("Heading One", level=1)
+        doc.add_paragraph("Body.")
+        p = tmp_path / "metadata.docx"
+        doc.save(str(p))
+
+        result = self.parser.parse(p)
+
+        assert result.metadata.category == "project"
+        assert result.metadata.tags == ["roadmap", "alpha", "launch"]
+        assert result.title == "Spec"
+
     def test_hyperlink_text_not_lost(self, tmp_docx_with_hyperlink: Path) -> None:
         """Runs inside w:hyperlink containers must not be silently dropped."""
         result = self.parser.parse(tmp_docx_with_hyperlink)

@@ -25,6 +25,7 @@
 ### 修改
 - `src/opendocs/cli/main.py` — 补齐运行目录骨架（config, data, index, rollback, output, temp）
 - `src/opendocs/utils/__init__.py` — 导出 `utcnow_naive`
+- `src/opendocs/utils/path_facts.py` — 统一推导规范化目录事实（absolute/relative）
 - `.env.example` — 补充 OPENDOCS_CONFIG 说明
 - `settings.example.toml` — 完善配置模板
 - `README.md` — 补充 S1 命令与 FAQ
@@ -34,6 +35,7 @@
 
 ### 数据模型
 - 7 个 ORM 模型完整对齐规范 §8.1，Chunk 额外增加 `created_at`/`updated_at`（规范 §2.1 可追踪要求）
+- `documents` 现额外持久化 `directory_path` / `relative_directory_path` 两个派生事实字段，用于后续阶段的目录过滤；它们由写入链统一生成，不在检索时临时猜测。
 - 所有 UUID 字段有格式 CHECK 约束（36 字符、连字符位置、小写十六进制）
 - SHA256 哈希有 64 位小写十六进制 CHECK 约束
 - `audit_logs.target_type` 预扩展为 10 个值（ADR-0005），避免后续阶段需要 ALTER
@@ -136,6 +138,15 @@ S2：解析器与切片器
 - **修复**：`MemoryRepository.create()` 新增 `M0` 持久化守卫，直接仓储调用也会拒绝将会话记忆落盘，对齐主规范 §4.4“`M0` 会话记忆不持久化”
 - **修复**：`AuditRepository` 收口为 append-only：`update_detail()` 直接拒绝原地改写，`delete()` 始终拒绝删除，避免仓储层绕过审计红线
 - **测试**：补充仓储层单测，覆盖 `MemoryRepository` 直接拒绝 `M0` 入库，以及 `AuditRepository` 的“更新拒绝 / 删除始终拒绝”路径
+
+### 2026-03-20 审查修复
+- **修复**：`DocumentModel.source_root_id` 显式声明到 `source_roots` 的 ORM 外键关系，避免领域模型层继续把来源关系当作“仅字符串字段”。
+- **修复**：把 `source_roots` 前移到基础 migration，`documents` 与 `scan_runs` 在 SQLite schema 中直接声明到 `source_roots` 的真实外键，不再依赖后补触发器或占位来源对象。
+- **修复**：`seed_demo_data.py` 先创建合法 `source_root`，再写入 `Document`；同时把 seed 文档的 `source_path` 统一到示例根目录，而不是单文件路径。
+- **修复**：`hash_sha256` 改为“仅在 `parse_status='failed'` 时允许为空”，避免对不可读文件写入伪造哈希。
+- **修复**：新增 migration `0006_documents_directory_facts.sql`，把 `directory_path` / `relative_directory_path` 收进 SQLite，作为目录过滤的权威事实源。
+- **修复**：`init_db()` / `build_sqlite_engine()` 新增 schema 兼容性守卫；如果本地开发库仍是根因修复前的旧结构，会直接 fail fast 并要求重建数据库，不再默默带着脏 schema 继续运行。
+- **测试**：扩展迁移、约束、seed、事务与仓储测试，覆盖“缺失 source_root 拒绝写入”“scan_run 绑定真实 source_root”“失败文档允许空哈希且成功文档必须有真哈希”“seed 不再生成孤儿文档”等路径。
 
 ## 9. ADR 索引
 

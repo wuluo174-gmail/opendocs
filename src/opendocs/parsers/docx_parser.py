@@ -5,10 +5,18 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from opendocs.domain.document_metadata import DocumentMetadata
 from opendocs.exceptions import ParseFailedError
 from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument, ParseError
 
 _HEADING_STYLE_RE = re.compile(r"^Heading\s*(\d+)$", re.IGNORECASE)
+
+
+def _split_keywords(value: str | None) -> list[str]:
+    if value is None:
+        return []
+    parts = re.split(r"[;,]", value)
+    return [part.strip() for part in parts if part.strip()]
 
 
 def _extract_paragraph_text(para_element, qn) -> str:
@@ -46,6 +54,7 @@ class DocxParser(BaseParser):
         heading_stack: list[tuple[int, str]] = []
         current_heading_path: str | None = None
         title: str | None = None
+        metadata = DocumentMetadata()
         failed_source_paras: list[int] = []
         failed_tables: list[int] = []
 
@@ -55,6 +64,14 @@ class DocxParser(BaseParser):
                 title = doc.core_properties.title
         except Exception:  # noqa: BLE001
             pass
+
+        try:
+            metadata = DocumentMetadata(
+                category=doc.core_properties.category,
+                tags=_split_keywords(doc.core_properties.keywords),
+            )
+        except Exception:  # noqa: BLE001
+            metadata = DocumentMetadata()
 
         # Iterate doc.element.body children in document order so that
         # tables inherit the heading_path of the heading that precedes them
@@ -194,4 +211,5 @@ class DocxParser(BaseParser):
             parse_status=parse_status,
             error_info=error_info,
             error=error,
+            metadata=metadata,
         )

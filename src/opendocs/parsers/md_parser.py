@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from opendocs.domain.document_metadata import DocumentMetadata
 from opendocs.parsers._encoding import read_text_with_fallback
 from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument
 
@@ -14,6 +15,79 @@ _FRONTMATTER_SEP = re.compile(r"^-{3,}\s*$")
 _SETEXT_H1_RE = re.compile(r"^={1,}\s*$")
 _SETEXT_H2_RE = re.compile(r"^-{1,}\s*$")
 _TRAILING_HASHES_RE = re.compile(r"\s+#+\s*$")
+_FRONTMATTER_LIST_ITEM_RE = re.compile(r"^-+\s+(.+)$")
+
+
+def _strip_yaml_scalar(value: str) -> str:
+    stripped = value.strip()
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {"'", '"'}:
+        return stripped[1:-1].strip()
+    return stripped
+
+
+def _parse_frontmatter_tags(value: str) -> list[str]:
+    stripped = value.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        inner = stripped[1:-1]
+        return [_strip_yaml_scalar(part) for part in inner.split(",")]
+    if ";" in stripped:
+        return [_strip_yaml_scalar(part) for part in stripped.split(";")]
+    if "," in stripped:
+        return [_strip_yaml_scalar(part) for part in stripped.split(",")]
+    return [_strip_yaml_scalar(stripped)]
+
+
+def _extract_frontmatter_metadata(lines: list[str]) -> tuple[int, DocumentMetadata]:
+    if not lines or not _FRONTMATTER_SEP.match(lines[0]):
+        return 0, DocumentMetadata()
+
+    for end_index in range(1, len(lines)):
+        if not _FRONTMATTER_SEP.match(lines[end_index]):
+            continue
+
+        data: dict[str, object] = {}
+        tag_items: list[str] = []
+        collecting_tags = False
+
+        for raw_line in lines[1:end_index]:
+            stripped = raw_line.strip()
+            if not stripped:
+                continue
+
+            if collecting_tags:
+                item_match = _FRONTMATTER_LIST_ITEM_RE.match(stripped)
+                if item_match:
+                    tag_items.append(_strip_yaml_scalar(item_match.group(1)))
+                    continue
+                collecting_tags = False
+
+            if ":" not in raw_line:
+                continue
+
+            key, raw_value = raw_line.split(":", 1)
+            key = key.strip().lower()
+            value = raw_value.strip()
+
+            if key == "category":
+                data["category"] = _strip_yaml_scalar(value)
+                continue
+            if key == "sensitivity":
+                data["sensitivity"] = _strip_yaml_scalar(value)
+                continue
+            if key != "tags":
+                continue
+
+            if value:
+                data["tags"] = _parse_frontmatter_tags(value)
+                continue
+
+            collecting_tags = True
+            tag_items = []
+            data["tags"] = tag_items
+
+        return end_index + 1, DocumentMetadata.model_validate(data)
+
+    return 0, DocumentMetadata()
 
 
 class MdParser(BaseParser):
@@ -26,6 +100,7 @@ class MdParser(BaseParser):
         text = read_text_with_fallback(file_path)
 
         title: str | None = None
+        metadata = DocumentMetadata()
 
         # Heading stack: list of (level, title_text)
         heading_stack: list[tuple[int, str]] = []
@@ -49,12 +124,7 @@ class MdParser(BaseParser):
         lines = text.split("\n")
 
         # Skip YAML frontmatter (--- ... ---)
-        line_start = 0
-        if lines and _FRONTMATTER_SEP.match(lines[0]):
-            for i in range(1, len(lines)):
-                if _FRONTMATTER_SEP.match(lines[i]):
-                    line_start = i + 1
-                    break
+        line_start, metadata = _extract_frontmatter_metadata(lines)
 
         for line in lines[line_start:]:
             # Track fenced code blocks so we don't treat `# comment` as headings
@@ -174,4 +244,5 @@ class MdParser(BaseParser):
             raw_text=raw_text,
             title=title,
             paragraphs=paragraphs,
+            metadata=metadata,
         )

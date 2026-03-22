@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine
 
-from opendocs.storage.db import init_db, migrate
+from opendocs.domain.models import SourceRootModel
+from opendocs.exceptions import SchemaCompatibilityError
+from opendocs.storage.db import build_sqlite_engine, init_db, migrate
+from opendocs.utils.path_facts import derive_directory_facts
+from opendocs.utils.time import utcnow_naive
 
 
 def _list_tables(db_path: Path) -> set[str]:
@@ -18,6 +22,151 @@ def _list_tables(db_path: Path) -> set[str]:
             "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
         ).fetchall()
         return {row[0] for row in rows}
+    finally:
+        connection.close()
+
+
+def _insert_source_root(
+    connection: sqlite3.Connection,
+    *,
+    source_root_id: str,
+    path: str,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO source_roots (
+            source_root_id, path, label, exclude_rules_json, recursive,
+            is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            source_root_id,
+            path,
+            "test source",
+            "{}",
+            1,
+            1,
+            "2026-03-03T00:00:00",
+            "2026-03-03T00:00:00",
+        ),
+    )
+
+
+def _insert_document(
+    connection: sqlite3.Connection,
+    *,
+    doc_id: str,
+    path: str,
+    relative_path: str,
+    source_root_id: str,
+    source_path: str | None = None,
+    hash_sha256: str | None = "a" * 64,
+    title: str = "test document",
+    file_type: str = "md",
+    size_bytes: int = 128,
+    created_at: str = "2026-03-03T00:00:00",
+    modified_at: str = "2026-03-03T00:00:00",
+    parse_status: str = "success",
+    sensitivity: str = "internal",
+    is_deleted_from_fs: int = 0,
+) -> None:
+    directory_path, relative_directory_path = derive_directory_facts(path, relative_path)
+    connection.execute(
+        """
+        INSERT INTO documents (
+            doc_id, path, relative_path, directory_path, relative_directory_path,
+            source_root_id, source_path, hash_sha256, title, file_type, size_bytes,
+            created_at, modified_at, parse_status, sensitivity, is_deleted_from_fs
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            doc_id,
+            path,
+            relative_path,
+            directory_path,
+            relative_directory_path,
+            source_root_id,
+            source_path or path,
+            hash_sha256,
+            title,
+            file_type,
+            size_bytes,
+            created_at,
+            modified_at,
+            parse_status,
+            sensitivity,
+            is_deleted_from_fs,
+        ),
+    )
+
+
+def _write_stale_development_db(db_path: Path) -> None:
+    """Create a legacy dev DB that claims current versions but lacks new invariants."""
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.executescript(
+            """
+            CREATE TABLE schema_migrations (
+                version TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                applied_at TEXT NOT NULL
+            );
+
+            CREATE TABLE source_roots (
+                source_root_id TEXT PRIMARY KEY,
+                path TEXT NOT NULL UNIQUE,
+                label TEXT,
+                exclude_rules_json TEXT NOT NULL DEFAULT '{}',
+                recursive INTEGER NOT NULL DEFAULT 1,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE documents (
+                doc_id TEXT PRIMARY KEY,
+                path TEXT NOT NULL UNIQUE,
+                relative_path TEXT NOT NULL,
+                source_root_id TEXT NOT NULL,
+                source_path TEXT NOT NULL,
+                hash_sha256 TEXT NOT NULL,
+                title TEXT NOT NULL,
+                file_type TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                modified_at TEXT NOT NULL,
+                indexed_at TEXT,
+                parse_status TEXT NOT NULL DEFAULT 'success',
+                category TEXT,
+                tags_json TEXT NOT NULL DEFAULT '[]',
+                sensitivity TEXT NOT NULL DEFAULT 'internal',
+                is_deleted_from_fs INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE scan_runs (
+                scan_run_id TEXT PRIMARY KEY,
+                source_root_id TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                status TEXT NOT NULL DEFAULT 'running',
+                included_count INTEGER NOT NULL DEFAULT 0,
+                excluded_count INTEGER NOT NULL DEFAULT 0,
+                unsupported_count INTEGER NOT NULL DEFAULT 0,
+                failed_count INTEGER NOT NULL DEFAULT 0,
+                error_summary_json TEXT NOT NULL DEFAULT '[]',
+                trace_id TEXT NOT NULL
+            );
+            """
+        )
+        for version in ("0001", "0002", "0003", "0004", "0006"):
+            connection.execute(
+                """
+                INSERT INTO schema_migrations (version, filename, applied_at)
+                VALUES (?, ?, ?)
+                """,
+                (version, f"{version}_legacy.sql", "2026-03-20 00:00:00"),
+            )
+        connection.commit()
     finally:
         connection.close()
 
@@ -34,12 +183,24 @@ def test_init_db_creates_core_tables(db_path: Path) -> None:
     assert "file_operation_plans" in tables
     assert "audit_logs" in tables
     assert "chunk_fts" in tables
+    assert "index_artifacts" in tables
 
 
 def test_migrate_is_idempotent(db_path: Path) -> None:
     first_applied = migrate(db_path)
     second_applied = migrate(db_path)
-    assert first_applied == ["0001"]
+    assert first_applied == [
+        "0001",
+        "0002",
+        "0003",
+        "0004",
+        "0006",
+        "0007",
+        "0008",
+        "0009",
+        "0010",
+        "0011",
+    ]
     assert second_applied == []
 
 
@@ -53,7 +214,181 @@ def test_migration_version_recorded(db_path: Path) -> None:
                 "SELECT version FROM schema_migrations ORDER BY version"
             ).fetchall()
         }
-        assert versions == {"0001"}
+        assert versions == {
+            "0001",
+            "0002",
+            "0003",
+            "0004",
+            "0006",
+            "0007",
+            "0008",
+            "0009",
+            "0010",
+            "0011",
+        }
+    finally:
+        connection.close()
+
+
+def test_migration_adds_document_file_identity_column_and_index(db_path: Path) -> None:
+    migrate(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(documents)").fetchall()
+        }
+        indexes = {
+            row[1]
+            for row in connection.execute("PRAGMA index_list(documents)").fetchall()
+        }
+        assert "file_identity" in columns
+        assert "idx_documents_file_identity" in indexes
+    finally:
+        connection.close()
+
+
+def test_migration_adds_source_root_metadata_default_columns(db_path: Path) -> None:
+    migrate(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        columns = {
+            row[1]: {"notnull": bool(row[3]), "default": row[4]}
+            for row in connection.execute("PRAGMA table_info(source_roots)").fetchall()
+        }
+        assert "default_category" in columns
+        assert "default_tags_json" in columns
+        assert "default_sensitivity" in columns
+        assert "source_config_rev" in columns
+        assert columns["default_tags_json"]["notnull"] is True
+        assert columns["default_tags_json"]["default"] == "'[]'"
+        assert columns["source_config_rev"]["notnull"] is True
+        assert columns["source_config_rev"]["default"] == "1"
+    finally:
+        connection.close()
+
+
+def test_migration_adds_document_source_config_rev_column(db_path: Path) -> None:
+    migrate(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        columns = {
+            row[1]: {"notnull": bool(row[3]), "default": row[4]}
+            for row in connection.execute("PRAGMA table_info(documents)").fetchall()
+        }
+        assert "source_config_rev" in columns
+        assert columns["source_config_rev"]["notnull"] is True
+        assert columns["source_config_rev"]["default"] == "1"
+    finally:
+        connection.close()
+
+
+def test_migration_scopes_document_path_uniqueness_to_active_rows(db_path: Path) -> None:
+    migrate(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("PRAGMA foreign_keys = ON")
+        _insert_source_root(
+            connection,
+            source_root_id="a9a9a9a9-a9a9-4a9a-8a9a-111111111111",
+            path="/tmp/path-scope-root",
+        )
+        active_index_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+            ("idx_documents_active_path",),
+        ).fetchone()
+        assert active_index_sql is not None
+        assert "WHERE is_deleted_from_fs = 0" in active_index_sql[0]
+
+        common_values = (
+            "same/path.md",
+            "/tmp/path-scope-root/same",
+            "same",
+            "a9a9a9a9-a9a9-4a9a-8a9a-111111111111",
+            "/tmp/path-scope-root/same/path.md",
+            "a" * 64,
+            "scoped path",
+            "md",
+            100,
+            "2026-03-03 00:00:00",
+            "2026-03-03 00:00:00",
+            "success",
+            "internal",
+        )
+        connection.execute(
+            """
+            INSERT INTO documents (
+                doc_id, path, relative_path, directory_path, relative_directory_path,
+                source_root_id, source_path, hash_sha256, title, file_type, size_bytes,
+                created_at, modified_at, parse_status, sensitivity, is_deleted_from_fs
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "11111111-1111-4111-8111-111111111111",
+                "/tmp/path-scope-root/same/path.md",
+                *common_values,
+                1,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO documents (
+                doc_id, path, relative_path, directory_path, relative_directory_path,
+                source_root_id, source_path, hash_sha256, title, file_type, size_bytes,
+                created_at, modified_at, parse_status, sensitivity, is_deleted_from_fs
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "22222222-2222-4222-8222-222222222222",
+                "/tmp/path-scope-root/same/path.md",
+                *common_values,
+                0,
+            ),
+        )
+        connection.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO documents (
+                    doc_id, path, relative_path, directory_path, relative_directory_path,
+                    source_root_id, source_path, hash_sha256, title, file_type, size_bytes,
+                    created_at, modified_at, parse_status, sensitivity, is_deleted_from_fs
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "33333333-3333-4333-8333-333333333333",
+                    "/tmp/path-scope-root/same/path.md",
+                    *common_values,
+                    0,
+                ),
+            )
+        connection.rollback()
+    finally:
+        connection.close()
+
+
+def test_index_artifacts_constraints(db_path: Path) -> None:
+    migrate(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO index_artifacts (
+                    artifact_name, status, artifact_path, embedder_model,
+                    embedder_dim, embedder_signature
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "dense_hnsw",
+                    "ready",
+                    "/tmp/chunks.hnsw",
+                    "local-ngram-hash-v1",
+                    0,
+                    "bad|dim=0",
+                ),
+            )
     finally:
         connection.close()
 
@@ -176,30 +511,15 @@ def test_migration_enforces_chunk_char_range_constraint(db_path: Path) -> None:
     connection = sqlite3.connect(db_path)
     try:
         connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute(
-            """
-            INSERT INTO documents (
-                doc_id, path, relative_path, source_root_id, source_path, hash_sha256,
-                title, file_type, size_bytes, created_at, modified_at, parse_status,
-                sensitivity, is_deleted_from_fs
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                "55555555-5555-4555-8555-555555555555",
-                "/tmp/range.md",
-                "range.md",
-                "66666666-6666-4666-8666-666666666666",
-                "/tmp/range.md",
-                "a" * 64,
-                "range",
-                "md",
-                128,
-                "2026-03-03T00:00:00",
-                "2026-03-03T00:00:00",
-                "success",
-                "internal",
-                0,
-            ),
+        source_root_id = "66666666-6666-4666-8666-666666666666"
+        _insert_source_root(connection, source_root_id=source_root_id, path="/tmp")
+        _insert_document(
+            connection,
+            doc_id="55555555-5555-4555-8555-555555555555",
+            path="/tmp/range.md",
+            relative_path="range.md",
+            source_root_id=source_root_id,
+            title="range",
         )
         with pytest.raises(sqlite3.IntegrityError):
             connection.execute(
@@ -226,30 +546,15 @@ def test_migration_enforces_chunk_locator_constraints(db_path: Path) -> None:
     connection = sqlite3.connect(db_path)
     try:
         connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute(
-            """
-            INSERT INTO documents (
-                doc_id, path, relative_path, source_root_id, source_path, hash_sha256,
-                title, file_type, size_bytes, created_at, modified_at, parse_status,
-                sensitivity, is_deleted_from_fs
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                "10101010-1010-4010-8010-101010101010",
-                "/tmp/locator.md",
-                "locator.md",
-                "20202020-2020-4020-8020-202020202020",
-                "/tmp/locator.md",
-                "a" * 64,
-                "locator",
-                "md",
-                128,
-                "2026-03-03T00:00:00",
-                "2026-03-03T00:00:00",
-                "success",
-                "internal",
-                0,
-            ),
+        source_root_id = "20202020-2020-4020-8020-202020202020"
+        _insert_source_root(connection, source_root_id=source_root_id, path="/tmp")
+        _insert_document(
+            connection,
+            doc_id="10101010-1010-4010-8010-101010101010",
+            path="/tmp/locator.md",
+            relative_path="locator.md",
+            source_root_id=source_root_id,
+            title="locator",
         )
 
         with pytest.raises(sqlite3.IntegrityError):
@@ -300,58 +605,35 @@ def test_migration_enforces_document_id_and_hash_format(db_path: Path) -> None:
     migrate(db_path)
     connection = sqlite3.connect(db_path)
     try:
+        _insert_source_root(
+            connection,
+            source_root_id="11111111-1111-4111-8111-111111111111",
+            path="/tmp/source-invalid-id",
+        )
+        _insert_source_root(
+            connection,
+            source_root_id="34343434-3434-4343-8343-343434343434",
+            path="/tmp/source-invalid-hash",
+        )
         with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                """
-                INSERT INTO documents (
-                    doc_id, path, relative_path, source_root_id, source_path, hash_sha256,
-                    title, file_type, size_bytes, created_at, modified_at, parse_status,
-                    sensitivity, is_deleted_from_fs
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    "not-a-uuid",
-                    "/tmp/invalid-id.md",
-                    "invalid-id.md",
-                    "11111111-1111-4111-8111-111111111111",
-                    "/tmp/invalid-id.md",
-                    "a" * 64,
-                    "invalid-id",
-                    "md",
-                    128,
-                    "2026-03-03T00:00:00",
-                    "2026-03-03T00:00:00",
-                    "success",
-                    "internal",
-                    0,
-                ),
+            _insert_document(
+                connection,
+                doc_id="not-a-uuid",
+                path="/tmp/invalid-id.md",
+                relative_path="invalid-id.md",
+                source_root_id="11111111-1111-4111-8111-111111111111",
+                title="invalid-id",
             )
 
         with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                """
-                INSERT INTO documents (
-                    doc_id, path, relative_path, source_root_id, source_path, hash_sha256,
-                    title, file_type, size_bytes, created_at, modified_at, parse_status,
-                    sensitivity, is_deleted_from_fs
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    "12121212-1212-4121-8121-121212121212",
-                    "/tmp/invalid-hash.md",
-                    "invalid-hash.md",
-                    "34343434-3434-4343-8343-343434343434",
-                    "/tmp/invalid-hash.md",
-                    "G" * 64,
-                    "invalid-hash",
-                    "md",
-                    128,
-                    "2026-03-03T00:00:00",
-                    "2026-03-03T00:00:00",
-                    "success",
-                    "internal",
-                    0,
-                ),
+            _insert_document(
+                connection,
+                doc_id="12121212-1212-4121-8121-121212121212",
+                path="/tmp/invalid-hash.md",
+                relative_path="invalid-hash.md",
+                source_root_id="34343434-3434-4343-8343-343434343434",
+                hash_sha256="G" * 64,
+                title="invalid-hash",
             )
     finally:
         connection.close()
@@ -418,30 +700,15 @@ def test_migration_enforces_confidence_range(db_path: Path) -> None:
     try:
         connection.execute("PRAGMA foreign_keys = ON")
         # Insert a parent document and chunk first
-        connection.execute(
-            """
-            INSERT INTO documents (
-                doc_id, path, relative_path, source_root_id, source_path, hash_sha256,
-                title, file_type, size_bytes, created_at, modified_at, parse_status,
-                sensitivity, is_deleted_from_fs
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                "/tmp/conf.md",
-                "conf.md",
-                "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-                "/tmp/conf.md",
-                "a" * 64,
-                "conf",
-                "md",
-                128,
-                "2026-03-03T00:00:00",
-                "2026-03-03T00:00:00",
-                "success",
-                "internal",
-                0,
-            ),
+        source_root_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        _insert_source_root(connection, source_root_id=source_root_id, path="/tmp")
+        _insert_document(
+            connection,
+            doc_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            path="/tmp/conf.md",
+            relative_path="conf.md",
+            source_root_id=source_root_id,
+            title="conf",
         )
         connection.execute(
             """
@@ -484,30 +751,15 @@ def test_chunk_fts_triggers_sync_on_insert_update_delete(db_path: Path) -> None:
     connection = sqlite3.connect(db_path)
     try:
         connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute(
-            """
-            INSERT INTO documents (
-                doc_id, path, relative_path, source_root_id, source_path, hash_sha256,
-                title, file_type, size_bytes, created_at, modified_at, parse_status,
-                sensitivity, is_deleted_from_fs
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                "/tmp/fts.md",
-                "fts.md",
-                "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-                "/tmp/fts.md",
-                "a" * 64,
-                "fts",
-                "md",
-                128,
-                "2026-03-03T00:00:00",
-                "2026-03-03T00:00:00",
-                "success",
-                "internal",
-                0,
-            ),
+        source_root_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        _insert_source_root(connection, source_root_id=source_root_id, path="/tmp")
+        _insert_document(
+            connection,
+            doc_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            path="/tmp/fts.md",
+            relative_path="fts.md",
+            source_root_id=source_root_id,
+            title="fts",
         )
         connection.execute(
             """
@@ -606,7 +858,7 @@ def test_migration_failure_leaves_db_usable_for_retry(
 
     real_files = db_module._list_migration_files()
 
-    bad_sql = db_path.parent / "0002_bad_retry.sql"
+    bad_sql = db_path.parent / "0099_bad_retry.sql"
     bad_sql.write_text(
         "INSERT INTO not_exists_table (id) VALUES ('boom');",
         encoding="utf-8",
@@ -614,18 +866,19 @@ def test_migration_failure_leaves_db_usable_for_retry(
 
     monkeypatch.setattr(db_module, "_list_migration_files", lambda: real_files + [bad_sql])
 
-    # First run: 0001 succeeds, 0002 fails
+    # First run: 0001+0002 succeed, 0099 fails
     with pytest.raises(sqlite3.Error):
         db_module.migrate(db_path)
 
-    # 0001 should be recorded as applied
+    # 0001 and 0002 should be recorded as applied
     connection = sqlite3.connect(db_path)
     try:
         applied = {
             row[0] for row in connection.execute("SELECT version FROM schema_migrations").fetchall()
         }
         assert "0001" in applied
-        assert "0002" not in applied
+        assert "0002" in applied
+        assert "0099" not in applied
 
         # Core tables from 0001 should exist
         tables = {
@@ -661,6 +914,170 @@ def test_migrate_fails_fast_on_duplicate_version_prefixes(
         db_module.migrate(db_path)
 
 
+def test_migration_declares_source_root_foreign_keys(db_path: Path) -> None:
+    migrate(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        document_fks = {
+            (row[3], row[2], row[4], row[6])
+            for row in connection.execute("PRAGMA foreign_key_list(documents)").fetchall()
+        }
+        scan_run_fks = {
+            (row[3], row[2], row[4], row[6])
+            for row in connection.execute("PRAGMA foreign_key_list(scan_runs)").fetchall()
+        }
+        assert ("source_root_id", "source_roots", "source_root_id", "RESTRICT") in document_fks
+        assert ("source_root_id", "source_roots", "source_root_id", "RESTRICT") in scan_run_fks
+    finally:
+        connection.close()
+
+
+def test_init_db_rejects_stale_development_schema(db_path: Path) -> None:
+    _write_stale_development_db(db_path)
+
+    with pytest.raises(SchemaCompatibilityError, match="Rebuild the local database"):
+        init_db(db_path)
+
+
+def test_build_sqlite_engine_rejects_stale_development_schema(db_path: Path) -> None:
+    _write_stale_development_db(db_path)
+
+    with pytest.raises(SchemaCompatibilityError, match="documents.source_root_id"):
+        build_sqlite_engine(db_path)
+
+
+def test_migration_backfills_directory_facts_for_legacy_documents(
+    db_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from opendocs.storage import db as db_module
+
+    all_files = db_module._list_migration_files()
+    legacy_files = [path for path in all_files if path.name < "0006_documents_directory_facts.sql"]
+    monkeypatch.setattr(db_module, "_list_migration_files", lambda: legacy_files)
+    db_module.migrate(db_path)
+
+    source_root_id = "abababab-abab-4aba-8aba-111111111111"
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("PRAGMA foreign_keys = ON")
+        _insert_source_root(connection, source_root_id=source_root_id, path="/tmp/legacy-root")
+        connection.execute(
+            """
+            INSERT INTO documents (
+                doc_id, path, relative_path, source_root_id, source_path, hash_sha256,
+                title, file_type, size_bytes, created_at, modified_at, parse_status,
+                sensitivity, is_deleted_from_fs
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "cdcdcdcd-cdcd-4cdc-8cdc-111111111111",
+                "/tmp/legacy-root/projects/alpha/report.md",
+                "projects/alpha/report.md",
+                source_root_id,
+                "/tmp/legacy-root/projects/alpha/report.md",
+                "a" * 64,
+                "legacy nested report",
+                "md",
+                128,
+                "2026-03-03 00:00:00",
+                "2026-03-03 00:00:00",
+                "success",
+                "internal",
+                0,
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    monkeypatch.setattr(db_module, "_list_migration_files", lambda: all_files)
+    applied = db_module.migrate(db_path)
+    assert applied == ["0006", "0007", "0008", "0009", "0010", "0011"]
+
+    connection = sqlite3.connect(db_path)
+    try:
+        row = connection.execute(
+            """
+            SELECT directory_path, relative_directory_path, source_path
+            FROM documents
+            WHERE doc_id = ?
+            """,
+            ("cdcdcdcd-cdcd-4cdc-8cdc-111111111111",),
+        ).fetchone()
+        assert row == (
+            "/tmp/legacy-root/projects/alpha",
+            "projects/alpha",
+            "/tmp/legacy-root/projects/alpha/report.md",
+        )
+    finally:
+        connection.close()
+
+
+def test_migration_repairs_legacy_source_path_to_document_path(
+    db_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from opendocs.storage import db as db_module
+
+    all_files = db_module._list_migration_files()
+    legacy_files = [path for path in all_files if path.name < "0007_source_path_provenance.sql"]
+    monkeypatch.setattr(db_module, "_list_migration_files", lambda: legacy_files)
+    db_module.migrate(db_path)
+
+    source_root_id = "efefefef-efef-4efe-8efe-111111111111"
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("PRAGMA foreign_keys = ON")
+        _insert_source_root(connection, source_root_id=source_root_id, path="/tmp/legacy-root")
+        connection.execute(
+            """
+            INSERT INTO documents (
+                doc_id, path, relative_path, source_root_id, source_path, hash_sha256,
+                title, file_type, size_bytes, created_at, modified_at, parse_status,
+                sensitivity, is_deleted_from_fs
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "dededede-dede-4ded-8ded-111111111111",
+                "/tmp/legacy-root/report.md",
+                "report.md",
+                source_root_id,
+                "/tmp/legacy-root",
+                "b" * 64,
+                "legacy source path",
+                "md",
+                64,
+                "2026-03-03 00:00:00",
+                "2026-03-03 00:00:00",
+                "success",
+                "internal",
+                0,
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    monkeypatch.setattr(db_module, "_list_migration_files", lambda: all_files)
+    applied = db_module.migrate(db_path)
+    assert applied == ["0007", "0008", "0009", "0010", "0011"]
+
+    connection = sqlite3.connect(db_path)
+    try:
+        row = connection.execute(
+            """
+            SELECT source_path
+            FROM documents
+            WHERE doc_id = ?
+            """,
+            ("dededede-dede-4ded-8ded-111111111111",),
+        ).fetchone()
+        assert row == ("/tmp/legacy-root/report.md",)
+    finally:
+        connection.close()
+
+
 def test_chunk_fts_triggers_sync_via_orm(engine: Engine) -> None:
     """FTS trigger sync must also work when writes go through SQLAlchemy ORM."""
     import uuid
@@ -669,18 +1086,33 @@ def test_chunk_fts_triggers_sync_via_orm(engine: Engine) -> None:
     from sqlalchemy.orm import Session
 
     from opendocs.domain.models import ChunkModel, DocumentModel
-    from opendocs.utils.time import utcnow_naive
 
     now = utcnow_naive()
     doc_id = str(uuid.uuid4())
+    source_root_id = str(uuid.uuid4())
     chunk_id = str(uuid.uuid4())
 
     with Session(engine) as session:
+        session.add(
+            SourceRootModel(
+                source_root_id=source_root_id,
+                path="/tmp",
+                label="fts orm",
+                exclude_rules_json={},
+                recursive=True,
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        session.flush()
         doc = DocumentModel(
             doc_id=doc_id,
             path="/tmp/fts_orm.md",
             relative_path="fts_orm.md",
-            source_root_id=str(uuid.uuid4()),
+            directory_path=derive_directory_facts("/tmp/fts_orm.md", "fts_orm.md")[0],
+            relative_directory_path=derive_directory_facts("/tmp/fts_orm.md", "fts_orm.md")[1],
+            source_root_id=source_root_id,
             source_path="/tmp/fts_orm.md",
             hash_sha256="a" * 64,
             title="fts-orm",
@@ -744,30 +1176,17 @@ def test_migration_enforces_chunk_index_non_negative(db_path: Path) -> None:
     connection = sqlite3.connect(db_path)
     try:
         connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute(
-            """
-            INSERT INTO documents (
-                doc_id, path, relative_path, source_root_id, source_path, hash_sha256,
-                title, file_type, size_bytes, created_at, modified_at, parse_status,
-                sensitivity, is_deleted_from_fs
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-                "/tmp/neg_idx.md",
-                "neg_idx.md",
-                "ffffffff-ffff-4fff-8fff-ffffffffffff",
-                "/tmp/neg_idx.md",
-                "a" * 64,
-                "neg idx",
-                "md",
-                128,
-                "2026-03-03 00:00:00",
-                "2026-03-03 00:00:00",
-                "success",
-                "internal",
-                0,
-            ),
+        source_root_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+        _insert_source_root(connection, source_root_id=source_root_id, path="/tmp")
+        _insert_document(
+            connection,
+            doc_id="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            path="/tmp/neg_idx.md",
+            relative_path="neg_idx.md",
+            source_root_id=source_root_id,
+            title="neg idx",
+            created_at="2026-03-03 00:00:00",
+            modified_at="2026-03-03 00:00:00",
         )
         connection.commit()
         with pytest.raises(sqlite3.IntegrityError):
@@ -849,3 +1268,24 @@ def test_init_db_script_is_idempotent(tmp_path: Path) -> None:
     target = tmp_path / "test_idempotent.db"
     assert mod.main(["--db-path", str(target)]) == 0
     assert mod.main(["--db-path", str(target)]) == 0
+
+
+def test_init_db_script_reports_schema_incompatibility(tmp_path: Path, capsys) -> None:
+    """init_db.py must fail fast on stale dev DBs instead of silently continuing."""
+    import importlib.util
+
+    script_path = Path(__file__).resolve().parents[3] / "scripts" / "init_db.py"
+    spec = importlib.util.spec_from_file_location("init_db_script", script_path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    target = tmp_path / "stale.db"
+    _write_stale_development_db(target)
+
+    exit_code = mod.main(["--db-path", str(target)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert "schema error:" in captured.out
+    assert "Rebuild the local database" in captured.out

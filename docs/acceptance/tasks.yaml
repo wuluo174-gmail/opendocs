@@ -315,7 +315,7 @@ stages:
   - 注意中文标题/段落切分与 Markdown 标题路径保留
 - id: S3
   name: 扫描、全量索引与增量更新
-  status: pending
+  status: completed
   depends_on:
   - S2
   objective: 建立根目录扫描、全量索引、监听增量更新、重建幂等与失败重试闭环。
@@ -383,7 +383,7 @@ stages:
   - 文件系统事件去抖动与重复事件处理
 - id: S4
   name: 混合检索与证据定位
-  status: pending
+  status: completed
   depends_on:
   - S3
   objective: 完成自然语言搜索、过滤器、分数融合、证据引用结构、打开文件与片段定位。

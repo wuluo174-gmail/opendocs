@@ -2,8 +2,8 @@
 
 Verifies that every table declared in the ORM (Base.metadata) is also
 created by the migration pipeline (init_db / migrate), and that columns
-match between ORM and SQL. This prevents the kind of ORM-SQL divergence
-that required migration 0006 as a patch.
+match between ORM and SQL. This prevents ORM-only constraints from drifting
+away from the real SQLite schema.
 
 One-way check (ORM → migrations) is intentional:
 - schema_migrations: migration-system table, not in ORM by design.
@@ -19,6 +19,7 @@ from pathlib import Path
 
 from opendocs.domain.models import Base
 from opendocs.storage.db import init_db
+from opendocs.utils.path_facts import derive_directory_facts
 
 
 def test_all_orm_tables_exist_after_migrations(db_path: Path) -> None:
@@ -126,6 +127,35 @@ def test_orm_indexes_match_migration_indexes(db_path: Path) -> None:
                     f"{[list(c) for c in db_cols_set]}. "
                     "Add it to the migration SQL."
                 )
+    finally:
+        connection.close()
+
+
+def test_orm_foreign_keys_match_migration_foreign_keys(db_path: Path) -> None:
+    """Every ORM foreign key must exist in the migrated DB with matching target."""
+    init_db(db_path)
+
+    connection = sqlite3.connect(db_path)
+    try:
+        for table in Base.metadata.sorted_tables:
+            db_foreign_keys = {
+                (row[3], row[2], row[4], row[6])
+                for row in connection.execute(f"PRAGMA foreign_key_list({table.name})").fetchall()
+            }
+            orm_foreign_keys = {
+                (
+                    fk.parent.name,
+                    fk.column.table.name,
+                    fk.column.name,
+                    fk.ondelete or "NO ACTION",
+                )
+                for fk in table.foreign_keys
+            }
+            assert orm_foreign_keys == db_foreign_keys, (
+                f"Foreign key mismatch for {table.name}: "
+                f"ORM={sorted(orm_foreign_keys)} DB={sorted(db_foreign_keys)}. "
+                "Sync models.py and migration SQL."
+            )
     finally:
         connection.close()
 
@@ -238,17 +268,34 @@ def test_fts_trigger_syncs_chunks_to_chunk_fts(db_path: Path) -> None:
     try:
         # Insert a document first (required by FK)
         doc_id = str(uuid.uuid4())
+        source_root_id = str(uuid.uuid4())
         connection.execute(
-            "INSERT INTO documents (doc_id, path, relative_path, source_root_id, "
-            "source_path, hash_sha256, title, file_type, size_bytes, "
-            "created_at, modified_at, parse_status, tags_json, sensitivity, is_deleted_from_fs) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO source_roots (source_root_id, path, label, exclude_rules_json, "
+            "recursive, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                source_root_id,
+                "/test",
+                "test source",
+                "{}",
+                1,
+                1,
+                "2026-01-01T00:00:00",
+                "2026-01-01T00:00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO documents (doc_id, path, relative_path, directory_path, "
+            "relative_directory_path, source_root_id, source_path, hash_sha256, title, "
+            "file_type, size_bytes, created_at, modified_at, parse_status, tags_json, "
+            "sensitivity, is_deleted_from_fs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 doc_id,
                 f"/test/{doc_id}.md",
                 f"{doc_id}.md",
-                str(uuid.uuid4()),
-                "/test",
+                derive_directory_facts(f"/test/{doc_id}.md", f"{doc_id}.md")[0],
+                derive_directory_facts(f"/test/{doc_id}.md", f"{doc_id}.md")[1],
+                source_root_id,
+                f"/test/{doc_id}.md",
                 "a" * 64,
                 "Test Doc",
                 "md",

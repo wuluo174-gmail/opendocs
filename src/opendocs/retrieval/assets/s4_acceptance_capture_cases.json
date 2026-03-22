@@ -1,0 +1,30 @@
+{
+  "tc005": [
+    {
+      "slug": "locating_results",
+      "query_id": "S4-GQ-001",
+      "note": "Locating query should show cited result and in-app evidence preview."
+    },
+    {
+      "slug": "synonym_results",
+      "query_id": "S4-GQ-009",
+      "note": "Synonym query should show cited result and in-app evidence preview."
+    }
+  ],
+  "tc018": [
+    {
+      "slug": "pdf_locate",
+      "locator_kind": "page",
+      "query": "research",
+      "expected_file_name": "research_paper.pdf",
+      "note": "PDF citation should expose page-aware location."
+    },
+    {
+      "slug": "paragraph_locate",
+      "locator_kind": "paragraph",
+      "query": "meeting",
+      "expected_file_name": "meeting_notes.md",
+      "note": "Non-PDF citation should expose paragraph-aware location."
+    }
+  ]
+}

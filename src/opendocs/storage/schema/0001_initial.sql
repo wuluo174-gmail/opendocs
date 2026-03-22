@@ -1,3 +1,23 @@
+CREATE TABLE source_roots (
+    source_root_id TEXT PRIMARY KEY CHECK (
+        length(source_root_id) = 36
+        AND substr(source_root_id, 9, 1) = '-'
+        AND substr(source_root_id, 14, 1) = '-'
+        AND substr(source_root_id, 19, 1) = '-'
+        AND substr(source_root_id, 24, 1) = '-'
+        AND length(replace(source_root_id, '-', '')) = 32
+        AND lower(source_root_id) = source_root_id
+        AND NOT replace(source_root_id, '-', '') GLOB '*[^0-9a-f]*'
+    ),
+    path TEXT NOT NULL UNIQUE,
+    label TEXT,
+    exclude_rules_json TEXT NOT NULL DEFAULT '{}',
+    recursive INTEGER NOT NULL DEFAULT 1,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE documents (
     doc_id TEXT PRIMARY KEY CHECK (
         length(doc_id) = 36
@@ -22,10 +42,13 @@ CREATE TABLE documents (
         AND NOT replace(source_root_id, '-', '') GLOB '*[^0-9a-f]*'
     ),
     source_path TEXT NOT NULL,
-    hash_sha256 TEXT NOT NULL CHECK (
-        length(hash_sha256) = 64
-        AND lower(hash_sha256) = hash_sha256
-        AND NOT hash_sha256 GLOB '*[^0-9a-f]*'
+    hash_sha256 TEXT CHECK (
+        hash_sha256 IS NULL
+        OR (
+            length(hash_sha256) = 64
+            AND lower(hash_sha256) = hash_sha256
+            AND NOT hash_sha256 GLOB '*[^0-9a-f]*'
+        )
     ),
     title TEXT NOT NULL,
     file_type TEXT NOT NULL CHECK (file_type IN ('txt', 'md', 'docx', 'pdf')),
@@ -37,7 +60,9 @@ CREATE TABLE documents (
     category TEXT,
     tags_json TEXT NOT NULL DEFAULT '[]',
     sensitivity TEXT NOT NULL DEFAULT 'internal' CHECK (sensitivity IN ('public', 'internal', 'sensitive')),
-    is_deleted_from_fs INTEGER NOT NULL DEFAULT 0
+    is_deleted_from_fs INTEGER NOT NULL DEFAULT 0,
+    CHECK (parse_status = 'failed' OR hash_sha256 IS NOT NULL),
+    FOREIGN KEY(source_root_id) REFERENCES source_roots(source_root_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX idx_documents_source_root_id ON documents (source_root_id);

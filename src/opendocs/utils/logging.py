@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sys
 import traceback
 from datetime import UTC, datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
+from typing import Any
 
 APP_LOGGER_NAME = "opendocs"
 AUDIT_LOGGER_NAME = "opendocs.audit"
@@ -48,6 +50,20 @@ def _sanitize_text(text: str) -> str:
     return sanitized
 
 
+def _sanitize_structured(value: Any) -> Any:
+    if isinstance(value, str):
+        return _sanitize_text(value)
+    if isinstance(value, dict):
+        return {key: _sanitize_structured(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_structured(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_sanitize_structured(item) for item in value)
+    if isinstance(value, set):
+        return [_sanitize_structured(item) for item in sorted(value, key=repr)]
+    return value
+
+
 class RedactFilter(logging.Filter):
     """Best-effort sensitive field redaction for plain log messages."""
 
@@ -67,6 +83,32 @@ class RedactFilter(logging.Filter):
         return True
 
 
+class AuditJsonFormatter(logging.Formatter):
+    """Audit-specific formatter: promotes record.audit_data fields to top level."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, object] = {
+            "timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+        }
+        audit_data = getattr(record, "audit_data", None)
+        if isinstance(audit_data, dict):
+            payload.update(_sanitize_structured(audit_data))
+        else:
+            payload["message"] = _sanitize_text(record.getMessage())
+        return json.dumps(_sanitize_structured(payload), ensure_ascii=False)
+
+
+class RaisingAuditHandler(TimedRotatingFileHandler):
+    """Audit handler that propagates I/O exceptions instead of swallowing them."""
+
+    def handleError(self, record: logging.LogRecord) -> None:
+        _, exc, _ = sys.exc_info()
+        if exc is not None:
+            raise exc
+
+
 class JsonFormatter(logging.Formatter):
     """Format log records as single-line JSON objects."""
 
@@ -83,7 +125,7 @@ class JsonFormatter(logging.Formatter):
         elif record.exc_text:
             payload["exception"] = record.exc_text
 
-        return json.dumps(payload, ensure_ascii=False)
+        return json.dumps(_sanitize_structured(payload), ensure_ascii=False)
 
 
 def _build_handler(log_path: Path) -> TimedRotatingFileHandler:
@@ -98,6 +140,31 @@ def _build_handler(log_path: Path) -> TimedRotatingFileHandler:
     handler.setFormatter(JsonFormatter())
     handler.addFilter(RedactFilter())
     return handler
+
+
+def _build_audit_handler(log_path: Path) -> RaisingAuditHandler:
+    handler = RaisingAuditHandler(
+        log_path,
+        when="midnight",
+        interval=1,
+        backupCount=7,
+        encoding="utf-8",
+        utc=True,
+    )
+    handler.setFormatter(AuditJsonFormatter())
+    handler.addFilter(RedactFilter())
+    return handler
+
+
+def _reset_logger_with_handler(name: str, handler: logging.Handler) -> logging.Logger:
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    for h in list(logger.handlers):
+        logger.removeHandler(h)
+        h.close()
+    logger.addHandler(handler)
+    logger.propagate = False
+    return logger
 
 
 def _reset_logger(name: str, log_path: Path) -> logging.Logger:
@@ -128,6 +195,7 @@ def init_logging(log_dir: str | Path) -> logging.Logger:
     path.mkdir(parents=True, exist_ok=True)
 
     app_logger = _reset_logger(APP_LOGGER_NAME, path / "app.log")
-    _reset_logger(AUDIT_LOGGER_NAME, path / "audit.jsonl")
+    # Audit logger uses RaisingAuditHandler + AuditJsonFormatter
+    _reset_logger_with_handler(AUDIT_LOGGER_NAME, _build_audit_handler(path / "audit.jsonl"))
     _reset_logger(TASK_LOGGER_NAME, path / "task.jsonl")
     return app_logger

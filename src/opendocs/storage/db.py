@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -11,6 +12,7 @@ from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session
 
+from opendocs.exceptions import SchemaCompatibilityError
 from opendocs.utils.time import utcnow_naive
 
 # Shared PRAGMA settings applied to both raw sqlite3 and SQLAlchemy connections.
@@ -72,6 +74,190 @@ def _sql_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
+def _table_sql(connection: sqlite3.Connection, table_name: str) -> str | None:
+    row = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table_name,),
+    ).fetchone()
+    if row is None:
+        return None
+    return row[0]
+
+
+def _index_sql(connection: sqlite3.Connection, index_name: str) -> str | None:
+    row = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+        (index_name,),
+    ).fetchone()
+    if row is None:
+        return None
+    return row[0]
+
+
+def _normalize_sql(sql: str) -> str:
+    return re.sub(r"\s+", " ", sql).strip().lower()
+
+
+def _table_info_map(connection: sqlite3.Connection, table_name: str) -> dict[str, sqlite3.Row]:
+    rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {row[1]: row for row in rows}
+
+
+def _has_foreign_key(
+    connection: sqlite3.Connection,
+    *,
+    table_name: str,
+    from_column: str,
+    target_table: str,
+    target_column: str,
+    on_delete: str,
+) -> bool:
+    rows = connection.execute(f"PRAGMA foreign_key_list({table_name})").fetchall()
+    expected_on_delete = on_delete.upper()
+    return any(
+        row[3] == from_column
+        and row[2] == target_table
+        and row[4] == target_column
+        and str(row[6]).upper() == expected_on_delete
+        for row in rows
+    )
+
+
+def _schema_compatibility_issues(connection: sqlite3.Connection) -> list[str]:
+    issues: list[str] = []
+
+    if _table_sql(connection, "schema_migrations") is None:
+        issues.append("schema_migrations table is missing")
+        return issues
+
+    source_roots_sql = _table_sql(connection, "source_roots")
+    if source_roots_sql is None:
+        issues.append("source_roots table is missing")
+    else:
+        source_root_columns = _table_info_map(connection, "source_roots")
+        if "default_category" not in source_root_columns:
+            issues.append("source_roots.default_category column is missing")
+        if "default_tags_json" not in source_root_columns:
+            issues.append("source_roots.default_tags_json column is missing")
+        if "default_sensitivity" not in source_root_columns:
+            issues.append("source_roots.default_sensitivity column is missing")
+        if "source_config_rev" not in source_root_columns:
+            issues.append("source_roots.source_config_rev column is missing")
+
+    documents_sql = _table_sql(connection, "documents")
+    if documents_sql is None:
+        issues.append("documents table is missing")
+    else:
+        document_columns = _table_info_map(connection, "documents")
+        hash_column = document_columns.get("hash_sha256")
+        if hash_column is None:
+            issues.append("documents.hash_sha256 column is missing")
+        elif bool(hash_column[3]):
+            issues.append("documents.hash_sha256 is still NOT NULL")
+
+        if not _has_foreign_key(
+            connection,
+            table_name="documents",
+            from_column="source_root_id",
+            target_table="source_roots",
+            target_column="source_root_id",
+            on_delete="RESTRICT",
+        ):
+            issues.append("documents.source_root_id foreign key is missing")
+
+        normalized_documents_sql = _normalize_sql(documents_sql)
+        if "file_identity" not in document_columns:
+            issues.append("documents.file_identity column is missing")
+        if "source_config_rev" not in document_columns:
+            issues.append("documents.source_config_rev column is missing")
+        if "path text not null unique" in normalized_documents_sql:
+            issues.append(
+                "documents.path still uses global UNIQUE instead of active-path uniqueness"
+            )
+        if "check (parse_status = 'failed' or hash_sha256 is not null)" not in (
+            normalized_documents_sql
+        ):
+            issues.append("documents is missing the failed-document hash rule")
+        active_path_index_sql = _index_sql(connection, "idx_documents_active_path")
+        if active_path_index_sql is None:
+            issues.append("documents idx_documents_active_path index is missing")
+        elif "where is_deleted_from_fs = 0" not in _normalize_sql(active_path_index_sql):
+            issues.append("documents idx_documents_active_path is not scoped to active rows")
+
+    scan_runs_sql = _table_sql(connection, "scan_runs")
+    if scan_runs_sql is None:
+        issues.append("scan_runs table is missing")
+    elif not _has_foreign_key(
+        connection,
+        table_name="scan_runs",
+        from_column="source_root_id",
+        target_table="source_roots",
+        target_column="source_root_id",
+        on_delete="RESTRICT",
+    ):
+        issues.append("scan_runs.source_root_id foreign key is missing")
+
+    return issues
+
+
+def _applied_migration_versions(connection: sqlite3.Connection) -> set[str]:
+    if _table_sql(connection, "schema_migrations") is None:
+        return set()
+    rows = connection.execute("SELECT version FROM schema_migrations").fetchall()
+    return {row[0] for row in rows}
+
+
+def _raise_preflight_schema_incompatibility(issues: list[str], db_path: Path) -> None:
+    joined_issues = "; ".join(issues)
+    raise SchemaCompatibilityError(
+        "database schema is incompatible with the current OpenDocs development baseline: "
+        f"{joined_issues}. This project is still in development and has no historical "
+        f"user data to preserve. Rebuild the local database at {db_path} and rerun "
+        "initialization."
+    )
+
+
+def _preflight_pending_migrations(
+    connection: sqlite3.Connection,
+    *,
+    db_path: Path,
+    pending_versions: set[str],
+) -> None:
+    applied_versions = _applied_migration_versions(connection)
+    issues: list[str] = []
+
+    if "0007" in pending_versions and "0006" in applied_versions:
+        document_columns = _table_info_map(connection, "documents")
+        if "directory_path" not in document_columns:
+            issues.append("documents.directory_path is missing even though migration 0006 is applied")
+        if "relative_directory_path" not in document_columns:
+            issues.append(
+                "documents.relative_directory_path is missing even though migration 0006 is applied"
+            )
+
+    if issues:
+        _raise_preflight_schema_incompatibility(issues, db_path)
+
+
+def validate_schema_compatibility(db_path: str | Path) -> None:
+    """Fail fast when a local dev DB no longer matches the current schema baseline."""
+    resolved = _resolve_db_path(db_path)
+    connection = _connect_sqlite(resolved)
+    try:
+        issues = _schema_compatibility_issues(connection)
+    finally:
+        connection.close()
+
+    if issues:
+        joined_issues = "; ".join(issues)
+        raise SchemaCompatibilityError(
+            "database schema is incompatible with the current OpenDocs development baseline: "
+            f"{joined_issues}. This project is still in development and has no historical "
+            f"user data to preserve. Rebuild the local database at {resolved} and rerun "
+            "initialization."
+        )
+
+
 def _apply_migration_atomically(
     connection: sqlite3.Connection,
     *,
@@ -111,6 +297,17 @@ def migrate(db_path: str | Path) -> list[str]:
     try:
         connection.execute(_MIGRATION_TABLE_SQL)
         connection.commit()
+        applied_versions_in_db = _applied_migration_versions(connection)
+        pending_versions = {
+            _extract_version(migration_file.name)
+            for migration_file in migration_files
+            if _extract_version(migration_file.name) not in applied_versions_in_db
+        }
+        _preflight_pending_migrations(
+            connection,
+            db_path=resolved,
+            pending_versions=pending_versions,
+        )
         for migration_file in migration_files:
             version = _extract_version(migration_file.name)
             exists = connection.execute(
@@ -135,14 +332,17 @@ def migrate(db_path: str | Path) -> list[str]:
     return applied_versions
 
 
-def init_db(db_path: str | Path) -> None:
-    """Create database and apply all migrations."""
-    migrate(db_path)
+def init_db(db_path: str | Path) -> list[str]:
+    """Create database, apply migrations, and verify runtime schema compatibility."""
+    applied_versions = migrate(db_path)
+    validate_schema_compatibility(db_path)
+    return applied_versions
 
 
 def build_sqlite_engine(db_path: str | Path) -> Engine:
     """Build SQLAlchemy engine for a SQLite file database."""
     resolved = _resolve_db_path(db_path)
+    validate_schema_compatibility(resolved)
     engine = create_engine(URL.create(drivername="sqlite+pysqlite", database=str(resolved)))
 
     @event.listens_for(engine, "connect")

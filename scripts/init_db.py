@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from opendocs.storage.db import migrate
+from opendocs.exceptions import SchemaCompatibilityError
+from opendocs.storage.db import init_db
 
 
 def run_init_db(db_path: str | Path) -> list[str]:
-    return migrate(db_path)
+    return init_db(db_path)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,7 +26,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    applied = run_init_db(args.db_path)
+    try:
+        applied = run_init_db(args.db_path)
+    except SchemaCompatibilityError as exc:
+        print(f"schema error: {exc}")
+        return 2
     if applied:
         print(f"database initialized at {args.db_path} (applied: {', '.join(applied)})")
     else:

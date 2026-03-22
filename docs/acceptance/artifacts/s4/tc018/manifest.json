@@ -1,0 +1,30 @@
+{
+  "case_id": "TC-018",
+  "generator_command": "./.venv/bin/python scripts/capture_s4_tc018_artifacts.py --output-dir /Users/809456948qq.com/code/opendocs/docs/acceptance/artifacts/s4/tc018 --force",
+  "output_dir": "/Users/809456948qq.com/code/opendocs/docs/acceptance/artifacts/s4/tc018",
+  "corpus_dir": "/Users/809456948qq.com/code/opendocs/tests/fixtures/generated/corpus_main",
+  "input_provenance": {
+    "acceptance_corpus_asset": "src/opendocs/retrieval/assets/s4_acceptance_corpora.json",
+    "acceptance_capture_asset": "src/opendocs/retrieval/assets/s4_acceptance_capture_cases.json"
+  },
+  "artifacts": [
+    {
+      "slug": "pdf_locate",
+      "query": "research",
+      "path": "/Users/809456948qq.com/code/opendocs/docs/acceptance/artifacts/s4/tc018/tc018_pdf_locate.png",
+      "selected_document": "research_paper.pdf",
+      "note": "PDF citation should expose page-aware location.",
+      "locator_label": "Locator: path=research_paper.pdf | page=1 | paragraph=1 | chars=0-167",
+      "preview_locator_label": "Preview Locator: page=1 | paragraph=1 | chars=0-167"
+    },
+    {
+      "slug": "paragraph_locate",
+      "query": "meeting",
+      "path": "/Users/809456948qq.com/code/opendocs/docs/acceptance/artifacts/s4/tc018/tc018_paragraph_locate.png",
+      "selected_document": "meeting_notes.md",
+      "note": "Non-PDF citation should expose paragraph-aware location.",
+      "locator_label": "Locator: path=meeting_notes.md | paragraph=1-2 | chars=0-32",
+      "preview_locator_label": "Preview Locator: paragraph=1-2 | chars=0-32"
+    }
+  ]
+}

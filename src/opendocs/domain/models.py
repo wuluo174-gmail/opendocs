@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for S1 storage baseline."""
+"""SQLAlchemy ORM models — S1 baseline + S3 source/scan extensions."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import JSON
@@ -22,8 +23,7 @@ from sqlalchemy.types import JSON
 from opendocs.utils.time import utcnow_naive
 
 # Recommended operation values for AuditLogModel.operation (spec §8.1.7).
-# S1 subset only — extend in later stages (e.g. summarize, rollback,
-# provider_call, memory_read) as the corresponding features are built.
+# Extended in S3 with scan/index operations.
 AUDIT_OPERATIONS = frozenset(
     {
         "move_execute",
@@ -36,6 +36,16 @@ AUDIT_OPERATIONS = frozenset(
         "memory_write",
         "search_query",
         "answer_generate",
+        # S3 additions
+        "add_source",
+        "update_source",
+        "scan_source",
+        "index_full",
+        "index_file",
+        "index_rebuild",
+        "index_incremental",
+        "watcher_event",
+        "remove_document",
     }
 )
 
@@ -67,6 +77,16 @@ def _sha256_check_sql(column: str) -> str:
 class DocumentModel(Base):
     __tablename__ = "documents"
     __table_args__ = (
+        Index("idx_documents_path", "path"),
+        Index(
+            "idx_documents_active_path",
+            "path",
+            unique=True,
+            sqlite_where=text("is_deleted_from_fs = 0"),
+        ),
+        Index("idx_documents_directory_path", "directory_path"),
+        Index("idx_documents_relative_directory_path", "relative_directory_path"),
+        Index("idx_documents_file_identity", "file_identity", unique=True),
         CheckConstraint(
             "file_type IN ('txt', 'md', 'docx', 'pdf')",
             name="ck_documents_file_type",
@@ -84,16 +104,36 @@ class DocumentModel(Base):
             _uuid_check_sql("source_root_id"),
             name="ck_documents_source_root_id_uuid",
         ),
-        CheckConstraint(_sha256_check_sql("hash_sha256"), name="ck_documents_hash_sha256"),
+        CheckConstraint(
+            "hash_sha256 IS NULL OR " + _sha256_check_sql("hash_sha256"),
+            name="ck_documents_hash_sha256",
+        ),
+        CheckConstraint(
+            "parse_status = 'failed' OR hash_sha256 IS NOT NULL",
+            name="ck_documents_hash_required_unless_failed",
+        ),
         CheckConstraint("size_bytes >= 0", name="ck_documents_size_bytes_non_negative"),
+        CheckConstraint(
+            "source_config_rev >= 1",
+            name="ck_documents_source_config_rev_positive",
+        ),
     )
 
     doc_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    path: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    path: Mapped[str] = mapped_column(Text, nullable=False)
     relative_path: Mapped[str] = mapped_column(Text, nullable=False)
-    source_root_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    directory_path: Mapped[str] = mapped_column(Text, nullable=False)
+    relative_directory_path: Mapped[str] = mapped_column(Text, nullable=False)
+    file_identity: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_root_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("source_roots.source_root_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     source_path: Mapped[str] = mapped_column(Text, nullable=False)
-    hash_sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_config_rev: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    hash_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     file_type: Mapped[str] = mapped_column(String(16), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -153,6 +193,35 @@ class ChunkModel(Base):
     embedding_model: Mapped[str | None] = mapped_column(Text, nullable=True)
     embedding_key: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+
+
+class IndexArtifactModel(Base):
+    __tablename__ = "index_artifacts"
+    __table_args__ = (
+        CheckConstraint(
+            "artifact_name IN ('dense_hnsw')",
+            name="ck_index_artifacts_artifact_name",
+        ),
+        CheckConstraint(
+            "status IN ('stale', 'ready', 'building', 'failed')",
+            name="ck_index_artifacts_status",
+        ),
+        CheckConstraint(
+            "embedder_dim > 0",
+            name="ck_index_artifacts_embedder_dim_positive",
+        ),
+    )
+
+    artifact_name: Mapped[str] = mapped_column(String(32), primary_key=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="stale")
+    artifact_path: Mapped[str] = mapped_column(Text, nullable=False)
+    embedder_model: Mapped[str] = mapped_column(Text, nullable=False)
+    embedder_dim: Mapped[int] = mapped_column(Integer, nullable=False)
+    embedder_signature: Mapped[str] = mapped_column(Text, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_built_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
 
 
@@ -343,3 +412,77 @@ class AuditLogModel(Base):
     result: Mapped[str] = mapped_column(String(16), nullable=False)
     detail_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     trace_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+
+
+# ---------------------------------------------------------------------------
+# S3: Source roots and scan runs
+# ---------------------------------------------------------------------------
+
+
+class SourceRootModel(Base):
+    __tablename__ = "source_roots"
+    __table_args__ = (
+        CheckConstraint(
+            _uuid_check_sql("source_root_id"),
+            name="ck_source_roots_source_root_id_uuid",
+        ),
+        CheckConstraint(
+            "default_sensitivity IS NULL OR "
+            "default_sensitivity IN ('public', 'internal', 'sensitive')",
+            name="ck_source_roots_default_sensitivity",
+        ),
+        CheckConstraint(
+            "source_config_rev >= 1",
+            name="ck_source_roots_source_config_rev_positive",
+        ),
+    )
+
+    source_root_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    path: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exclude_rules_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    default_category: Mapped[str | None] = mapped_column(Text, nullable=True)
+    default_tags_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    default_sensitivity: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    source_config_rev: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    recursive: Mapped[bool] = mapped_column(nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+
+
+class ScanRunModel(Base):
+    __tablename__ = "scan_runs"
+    __table_args__ = (
+        CheckConstraint(
+            _uuid_check_sql("scan_run_id"),
+            name="ck_scan_runs_scan_run_id_uuid",
+        ),
+        CheckConstraint(
+            "status IN ('running', 'completed', 'failed')",
+            name="ck_scan_runs_status",
+        ),
+        CheckConstraint("included_count >= 0", name="ck_scan_runs_included_count"),
+        CheckConstraint("excluded_count >= 0", name="ck_scan_runs_excluded_count"),
+        CheckConstraint("unsupported_count >= 0", name="ck_scan_runs_unsupported_count"),
+        CheckConstraint("failed_count >= 0", name="ck_scan_runs_failed_count"),
+        CheckConstraint("length(trace_id) > 0", name="ck_scan_runs_trace_id_non_empty"),
+        Index("idx_scan_runs_source", "source_root_id"),
+        Index("idx_scan_runs_trace", "trace_id"),
+    )
+
+    scan_run_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    source_root_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("source_roots.source_root_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="running")
+    included_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    excluded_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unsupported_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_summary_json: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+    trace_id: Mapped[str] = mapped_column(String(64), nullable=False)

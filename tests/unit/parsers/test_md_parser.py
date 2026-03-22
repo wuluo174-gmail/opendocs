@@ -168,6 +168,30 @@ class TestMdParser:
             extracted = result.raw_text[para.start_char : para.end_char]
             assert extracted == para.text
 
+    def test_frontmatter_metadata_extracted(self, tmp_path: Path) -> None:
+        content = (
+            "---\n"
+            "category: Project Plan\n"
+            "tags:\n"
+            "  - Roadmap\n"
+            "  - Alpha\n"
+            "sensitivity: Sensitive\n"
+            "---\n"
+            "\n"
+            "# Actual Title\n"
+            "\n"
+            "Body content here.\n"
+        )
+        p = tmp_path / "metadata_frontmatter.md"
+        p.write_text(content, encoding="utf-8")
+
+        result = self.parser.parse(p)
+
+        assert result.metadata.category == "project plan"
+        assert result.metadata.tags == ["roadmap", "alpha"]
+        assert result.metadata.sensitivity == "sensitive"
+        assert result.title == "Actual Title"
+
     def test_indented_closing_fence(self, tmp_path: Path) -> None:
         """Closing fence with up to 3 spaces indent must be recognized."""
         content = (

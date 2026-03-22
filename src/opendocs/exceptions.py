@@ -19,6 +19,10 @@ class StorageError(OpenDocsError):
     """Raised when a storage operation fails (migration, query, integrity)."""
 
 
+class SchemaCompatibilityError(StorageError):
+    """Raised when a local SQLite DB no longer matches the current development schema."""
+
+
 # ---------------------------------------------------------------------------
 # 规范 §11.3 业务级错误码（供后续服务层按类型处理）
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 ﻿# OpenDocs
 
-OpenDocs 是本地优先、证据优先的桌面 AI 文档管理系统。本仓库当前覆盖 S0-S2，并正在收口这些阶段的基线问题。
+OpenDocs 是本地优先、证据优先的桌面 AI 文档管理系统。本仓库当前已经落地 S0-S4 的基础实现，并正在收口这些阶段的工程与验收问题。
 
 ## 安装
 
@@ -69,6 +69,56 @@ py -3.11 -m pip install -e ".[dev]"
 .venv/bin/python -m opendocs
 ```
 
+查看索引与 watcher 状态：
+
+```bash
+.venv/bin/python -m opendocs status
+```
+
+配置来源目录及默认元数据：
+
+```bash
+.venv/bin/python -m opendocs source add tests/fixtures/generated/corpus_main \
+  --category workspace \
+  --tag shared-source \
+  --sensitivity internal
+```
+
+更新来源默认元数据后会自动触发该来源的索引同步：
+
+```bash
+.venv/bin/python -m opendocs source update <source_root_id> \
+  --category operations \
+  --tag ops-review \
+  --sensitivity sensitive
+```
+
+列出当前已配置来源：
+
+```bash
+.venv/bin/python -m opendocs source list
+```
+
+添加一个目录、做首次全量索引并进入 watcher：
+
+```bash
+.venv/bin/python -m opendocs watch --source tests/fixtures/generated/corpus_main \
+  --category workspace \
+  --tag shared-source \
+  --sensitivity internal
+```
+
+带过滤器执行搜索：
+
+```bash
+.venv/bin/python -m opendocs search "项目" \
+  --category project \
+  --tag roadmap,shared-source \
+  --sensitivity sensitive \
+  --time-from 2026-03-01T00:00:00 \
+  --time-to 2026-03-20T23:59:59
+```
+
 ## 测试
 
 执行阶段基线测试：
@@ -131,7 +181,9 @@ opendocs/
 2. 配置文件缺失：默认会使用内置配置；如需自定义，将仓库根目录的 `settings.example.toml` 复制到运行目录的 `config/settings.toml`（macOS 默认为 `~/Library/Application Support/OpenDocs/config/settings.toml`，Linux 为 `~/.local/share/OpenDocs/config/settings.toml`，Windows 为 `%APPDATA%/OpenDocs/config/settings.toml`），或设置 `OPENDOCS_CONFIG` 环境变量指向 TOML 文件。
 3. 日志位置：默认在用户数据目录下的 `logs/`，启动时会创建 `app.log`、`audit.jsonl`、`task.jsonl`。
    这三类日志默认按天轮转，保留最近 7 份历史文件。
+   搜索等用户输入写入审计时只保留摘要信息（如长度与哈希），不会把原始查询明文落盘。
 4. 凭据管理：按阶段计划，keyring 集成在 S10 实现，S0/S1 不提供 Provider 密钥管理接口。
 5. 若当前 `python` 不是 3.11：`bootstrap_dev.py` 会在 Windows 上尝试委托给 `py -3.11`；若本机没有可用的宿主机原生 `3.11`，脚本会失败并提示先安装。
 6. 若仓库里的 `.venv` 指向不存在的解释器，`bootstrap_dev.py` 会直接失败，避免继续复用失效环境；此时请删除旧 `.venv` 并用宿主机原生 `Python 3.11` 重建。
 7. `.doc` 等不支持格式会被明确标记为 `unsupported format`，不会伪装成 `txt` 解析结果。
+8. `category / tags / sensitivity` 的数据来源现在是显式的：来源级默认元数据由 `SourceService.add_source/update_source` 持有，文档声明元数据由 Markdown front matter 与 docx/pdf 原生元数据产出，索引层只负责合并后落库。

@@ -1,6 +1,6 @@
 # ADR-0002：SourceRoot 实体推迟至 S3 实现
 
-- 状态：Accepted
+- 状态：Superseded by ADR-0014
 - 日期：2026-03-05
 - 阶段：S1（记录 S1 设计决策）
 

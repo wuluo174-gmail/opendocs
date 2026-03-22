@@ -24,8 +24,16 @@ class DocumentRepository:
     def get_by_id(self, doc_id: str) -> DocumentModel | None:
         return self._session.get(DocumentModel, doc_id)
 
-    def get_by_path(self, path: str) -> DocumentModel | None:
+    def get_by_path(self, path: str, *, include_deleted: bool = False) -> DocumentModel | None:
         statement = select(DocumentModel).where(DocumentModel.path == path)
+        if not include_deleted:
+            statement = statement.where(DocumentModel.is_deleted_from_fs.is_(False))
+        statement = statement.order_by(DocumentModel.is_deleted_from_fs.asc(), DocumentModel.doc_id)
+        statement = statement.limit(1)
+        return self._session.scalar(statement)
+
+    def get_by_file_identity(self, file_identity: str) -> DocumentModel | None:
+        statement = select(DocumentModel).where(DocumentModel.file_identity == file_identity)
         return self._session.scalar(statement)
 
     def list_all(self, *, limit: int | None = None) -> list[DocumentModel]:

@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from opendocs.domain.document_metadata import DocumentMetadata
 from opendocs.exceptions import ParseFailedError, ParseUnsupportedError
 from opendocs.parsers.normalization import normalize_text
 
@@ -60,6 +61,7 @@ class ParsedDocument(BaseModel):
     error: ParseError | None = None
     paragraphs: list[Paragraph] = Field(default_factory=list)
     page_count: int | None = None
+    metadata: DocumentMetadata = Field(default_factory=DocumentMetadata)
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -222,6 +224,7 @@ class ParserRegistry:
         if result.parse_status != "failed":
             if result.title is not None:
                 result.title = normalize_text(result.title)
+            result.metadata = result.metadata.normalized_with(normalize_text)
 
         if result.parse_status != "failed" and result.raw_text:
             # Normalize each paragraph text first

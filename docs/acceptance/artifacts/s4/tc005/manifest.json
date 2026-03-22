@@ -1,0 +1,38 @@
+{
+  "case_id": "TC-005",
+  "generator_command": "./.venv/bin/python scripts/capture_s4_tc005_artifacts.py --output-dir /Users/809456948qq.com/code/opendocs/docs/acceptance/artifacts/s4/tc005 --force",
+  "output_dir": "/Users/809456948qq.com/code/opendocs/docs/acceptance/artifacts/s4/tc005",
+  "corpus_dir": "generated://opendocs/s4_search_corpus",
+  "query_log_path": "/Users/809456948qq.com/code/opendocs/docs/acceptance/artifacts/s4/tc005/query_results.json",
+  "input_provenance": {
+    "acceptance_corpus_asset": "src/opendocs/retrieval/assets/s4_acceptance_corpora.json",
+    "acceptance_capture_asset": "src/opendocs/retrieval/assets/s4_acceptance_capture_cases.json",
+    "query_lexicon_asset": "src/opendocs/retrieval/assets/stage_query_lexicon.json",
+    "golden_queries_asset": "src/opendocs/retrieval/assets/s4_hybrid_search_queries.json",
+    "filter_cases_asset": "src/opendocs/retrieval/assets/s4_search_filter_cases.json",
+    "corpus_builder": "src/opendocs/retrieval/stage_search_corpus.py",
+    "source_defaults_owner": "src/opendocs/retrieval/stage_search_corpus.py#source_defaults"
+  },
+  "artifacts": [
+    {
+      "slug": "locating_results",
+      "query_id": "S4-GQ-001",
+      "query": "项目进度",
+      "path": "/Users/809456948qq.com/code/opendocs/docs/acceptance/artifacts/s4/tc005/tc005_locating_results.png",
+      "selected_document": "zh_project_plan.md",
+      "note": "Locating query should show cited result and in-app evidence preview.",
+      "locator_label": "Locator: path=zh_project_plan.md | paragraph=1-2 | chars=0-51",
+      "preview_locator_label": "Preview Locator: paragraph=1-2 | chars=0-51"
+    },
+    {
+      "slug": "synonym_results",
+      "query_id": "S4-GQ-009",
+      "query": "roadmap",
+      "path": "/Users/809456948qq.com/code/opendocs/docs/acceptance/artifacts/s4/tc005/tc005_synonym_results.png",
+      "selected_document": "en_project_plan.md",
+      "note": "Synonym query should show cited result and in-app evidence preview.",
+      "locator_label": "Locator: path=en_project_plan.md | paragraph=1-2 | chars=0-173",
+      "preview_locator_label": "Preview Locator: paragraph=1-2 | chars=0-173"
+    }
+  ]
+}

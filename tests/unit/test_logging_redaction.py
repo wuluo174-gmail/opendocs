@@ -129,6 +129,30 @@ def test_audit_and_task_loggers_write_jsonl(tmp_path: Path) -> None:
     assert task_entries[0]["message"] == "task bootstrap event"
 
 
+def test_audit_logger_redacts_structured_payload_values(tmp_path: Path) -> None:
+    init_logging(tmp_path)
+    audit_logger = get_audit_logger()
+
+    audit_logger.info(
+        "audit structured payload",
+        extra={
+            "audit_data": {
+                "detail": {
+                    "query": "password=abc123 token=mytoken secret=hide-me",
+                }
+            }
+        },
+    )
+    for handler in audit_logger.handlers:
+        handler.flush()
+
+    content = _read_log(tmp_path / "audit.jsonl")
+    assert "abc123" not in content
+    assert "mytoken" not in content
+    assert "hide-me" not in content
+    assert "[REDACTED]" in content
+
+
 def test_assignment_values_with_commas_semicolons_spaces_are_redacted(tmp_path: Path) -> None:
     logger = init_logging(tmp_path)
     log_file = tmp_path / "app.log"

@@ -5,12 +5,15 @@ Prefers PyMuPDF (fitz), falls back to pypdf.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from opendocs.domain.document_metadata import DocumentMetadata
 from opendocs.exceptions import ParseFailedError
 from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument, ParseError
 
@@ -35,7 +38,14 @@ class _PdfExtraction:
     page_count: int
     failed_pages: list[int]  # 1-based page numbers that failed
     toc: list[_TocEntry]  # table of contents (may be empty)
+    metadata: DocumentMetadata = field(default_factory=DocumentMetadata)
     empty_pages: list[int] = field(default_factory=list)  # extracted but yielded no text
+
+
+def _split_keywords(value: str | None) -> list[str]:
+    if value is None:
+        return []
+    return [part.strip() for part in re.split(r"[;,]", value) if part.strip()]
 
 
 def _try_fitz(file_path: Path) -> _PdfExtraction:
@@ -43,7 +53,12 @@ def _try_fitz(file_path: Path) -> _PdfExtraction:
     import fitz  # type: ignore[import-untyped]
 
     with fitz.open(str(file_path)) as doc:
-        title = doc.metadata.get("title") if doc.metadata else None
+        raw_metadata = doc.metadata or {}
+        title = raw_metadata.get("title")
+        metadata = DocumentMetadata(
+            category=raw_metadata.get("subject"),
+            tags=_split_keywords(raw_metadata.get("keywords")),
+        )
         page_count = len(doc)
         pages: list[tuple[int, str]] = []
         failed_pages: list[int] = []
@@ -66,11 +81,12 @@ def _try_fitz(file_path: Path) -> _PdfExtraction:
             pass
 
     return _PdfExtraction(
-        pages,
-        title or None,
-        page_count,
-        failed_pages,
-        toc,
+        pages=pages,
+        title=title or None,
+        page_count=page_count,
+        failed_pages=failed_pages,
+        toc=toc,
+        metadata=metadata,
         empty_pages=empty_pages,
     )
 
@@ -79,29 +95,47 @@ def _try_pypdf(file_path: Path) -> _PdfExtraction:
     """Extract pages with pypdf."""
     from pypdf import PdfReader  # type: ignore[import-untyped]
 
-    reader = PdfReader(str(file_path))
-    title = None
-    if reader.metadata and reader.metadata.title:
-        title = reader.metadata.title
-    page_count = len(reader.pages)
-    pages: list[tuple[int, str]] = []
-    failed_pages: list[int] = []
-    empty_pages: list[int] = []
-    for i, page in enumerate(reader.pages):
-        try:
-            text = page.extract_text() or ""
-            pages.append((i + 1, text))
-            if not text.strip():
-                empty_pages.append(i + 1)
-        except Exception:  # noqa: BLE001
-            failed_pages.append(i + 1)
+    stderr_buffer = io.StringIO()
+    stdout_buffer = io.StringIO()
+
+    with contextlib.redirect_stderr(stderr_buffer), contextlib.redirect_stdout(stdout_buffer):
+        reader = PdfReader(str(file_path))
+        title = None
+        if reader.metadata and reader.metadata.title:
+            title = reader.metadata.title
+        metadata = DocumentMetadata(
+            category=reader.metadata.subject if reader.metadata else None,
+            tags=_split_keywords(reader.metadata.keywords if reader.metadata else None),
+        )
+        page_count = len(reader.pages)
+        pages: list[tuple[int, str]] = []
+        failed_pages: list[int] = []
+        empty_pages: list[int] = []
+        for i, page in enumerate(reader.pages):
+            try:
+                text = page.extract_text() or ""
+                pages.append((i + 1, text))
+                if not text.strip():
+                    empty_pages.append(i + 1)
+            except Exception:  # noqa: BLE001
+                failed_pages.append(i + 1)
+
+    captured_noise = "\n".join(
+        part.strip()
+        for part in (stderr_buffer.getvalue(), stdout_buffer.getvalue())
+        if part.strip()
+    )
+    if captured_noise:
+        logger.debug("Suppressed pypdf console output for %s: %s", file_path, captured_noise)
+
     # pypdf has no convenient TOC API; return empty
     return _PdfExtraction(
-        pages,
-        title or None,
-        page_count,
-        failed_pages,
+        pages=pages,
+        title=title or None,
+        page_count=page_count,
+        failed_pages=failed_pages,
         toc=[],
+        metadata=metadata,
         empty_pages=empty_pages,
     )
 
@@ -301,4 +335,5 @@ class PdfParser(BaseParser):
             parse_status=parse_status,
             error_info=error_info,
             error=error,
+            metadata=extraction.metadata,
         )

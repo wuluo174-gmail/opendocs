@@ -16,7 +16,9 @@ from opendocs.domain.models import (
     KnowledgeItemModel,
     MemoryItemModel,
     RelationEdgeModel,
+    SourceRootModel,
 )
+from opendocs.exceptions import SchemaCompatibilityError
 from opendocs.storage.db import build_sqlite_engine, init_db, session_scope
 from opendocs.storage.repositories import (
     AuditRepository,
@@ -26,9 +28,12 @@ from opendocs.storage.repositories import (
     MemoryRepository,
     PlanRepository,
     RelationRepository,
+    SourceRepository,
 )
+from opendocs.utils.path_facts import derive_directory_facts
 from opendocs.utils.time import utcnow_naive
 
+SOURCE_ROOT_ID = "00000000-0000-0000-0000-000000000001"
 DOC_ID = "00000000-0000-0000-0000-000000000101"
 CHUNK_ID = "00000000-0000-0000-0000-000000000201"
 MEMORY_ID = "00000000-0000-0000-0000-000000000301"
@@ -73,6 +78,7 @@ def _ensure_demo_document(demo_doc_path: str) -> None:
 def seed_demo_data(db_path: str | Path) -> dict[str, int]:
     resolved_db_path = Path(db_path)
     demo_doc_path, demo_doc_relative_path, demo_archive_path = resolve_seed_paths(resolved_db_path)
+    demo_source_root_path = str(Path(demo_doc_path).resolve().parent)
     _ensure_demo_document(demo_doc_path)
     demo_doc_size = Path(demo_doc_path).stat().st_size
     init_db(resolved_db_path)
@@ -94,20 +100,47 @@ def seed_demo_data(db_path: str | Path) -> dict[str, int]:
             memory_repo = MemoryRepository(session)
             plan_repo = PlanRepository(session)
             audit_repo = AuditRepository(session)
+            source_repo = SourceRepository(session)
 
             now = _now()
+            source_root = source_repo.get_by_path(demo_source_root_path)
+            if source_root is None:
+                preferred_source_root_id = (
+                    SOURCE_ROOT_ID
+                    if source_repo.get_by_id(SOURCE_ROOT_ID) is None
+                    else str(uuid.uuid4())
+                )
+                source_root = source_repo.create(
+                    SourceRootModel(
+                        source_root_id=preferred_source_root_id,
+                        path=demo_source_root_path,
+                        label="Seed Demo Source",
+                        exclude_rules_json={},
+                        recursive=True,
+                        is_active=True,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+
             document = document_repo.get_by_path(demo_doc_path)
             if document is None:
                 document_id = _preferred_or_new_id(
                     DOC_ID,
                     document_repo.get_by_id(DOC_ID) is not None,
                 )
+                directory_path, relative_directory_path = derive_directory_facts(
+                    demo_doc_path,
+                    demo_doc_relative_path,
+                )
                 document_repo.create(
                     DocumentModel(
                         doc_id=document_id,
                         path=demo_doc_path,
                         relative_path=demo_doc_relative_path,
-                        source_root_id="00000000-0000-0000-0000-000000000001",
+                        directory_path=directory_path,
+                        relative_directory_path=relative_directory_path,
+                        source_root_id=source_root.source_root_id,
                         source_path=demo_doc_path,
                         hash_sha256=hashlib.sha256(Path(demo_doc_path).read_bytes()).hexdigest(),
                         title="Project Overview",
@@ -278,7 +311,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    inserted = seed_demo_data(args.db_path)
+    try:
+        inserted = seed_demo_data(args.db_path)
+    except SchemaCompatibilityError as exc:
+        print(f"schema error: {exc}")
+        return 2
     print(f"seed completed for {args.db_path}: {inserted}")
     return 0
 

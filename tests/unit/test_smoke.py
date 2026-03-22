@@ -23,6 +23,7 @@ def test_exception_hierarchy_importable() -> None:
         PlanNotApprovedError,
         ProviderUnavailableError,
         RollbackPartialError,
+        SchemaCompatibilityError,
         SourceNotFoundError,
         StorageError,
     )
@@ -31,6 +32,7 @@ def test_exception_hierarchy_importable() -> None:
     assert issubclass(ConfigError, OpenDocsError)
     assert issubclass(BootstrapError, OpenDocsError)
     assert issubclass(StorageError, OpenDocsError)
+    assert issubclass(SchemaCompatibilityError, StorageError)
 
     # 规范 §11.3 业务错误码继承关系
     assert issubclass(SourceNotFoundError, OpenDocsError)
@@ -55,6 +57,9 @@ def test_cli_help_smoke() -> None:
     )
     assert completed.returncode == 0
     assert "usage: opendocs" in completed.stdout
+    assert "source" in completed.stdout
+    assert "status" in completed.stdout
+    assert "watch" in completed.stdout
 
 
 def test_cli_default_start_smoke(tmp_path: Path) -> None:

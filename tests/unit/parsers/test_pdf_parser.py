@@ -56,6 +56,28 @@ class TestPdfParser:
         # Should have a title (either from metadata or first line)
         assert result.title is not None
 
+    def test_pdf_metadata_extracted(self, tmp_path: Path) -> None:
+        fitz = pytest.importorskip("fitz")
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_text((72, 72), "PDF Metadata Title\n\nBody.")
+        doc.set_metadata(
+            {
+                "title": "PDF Metadata Title",
+                "subject": "Project",
+                "keywords": "Roadmap; Alpha, launch",
+            }
+        )
+        pdf_path = tmp_path / "metadata.pdf"
+        doc.save(str(pdf_path))
+        doc.close()
+
+        result = self.parser.parse(pdf_path)
+
+        assert result.metadata.category == "project"
+        assert result.metadata.tags == ["roadmap", "alpha", "launch"]
+        assert result.title == "PDF Metadata Title"
+
     def test_corrupted_pdf(self, tmp_path: Path) -> None:
         """A corrupted PDF should raise ParseFailedError."""
         from opendocs.exceptions import ParseFailedError
@@ -64,6 +86,24 @@ class TestPdfParser:
         p.write_bytes(b"not a pdf")
         with pytest.raises(ParseFailedError):
             self.parser.parse(p)
+
+    def test_corrupted_pdf_does_not_leak_library_stderr(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Corrupted PDFs must fail through our exception path, not raw library stderr."""
+        from opendocs.exceptions import ParseFailedError
+
+        p = tmp_path / "bad.pdf"
+        p.write_bytes(b"not a pdf")
+
+        with pytest.raises(ParseFailedError):
+            self.parser.parse(p)
+
+        captured = capsys.readouterr()
+        assert "EOF marker not found" not in captured.err
+        assert "EOF marker not found" not in captured.out
 
     def test_chinese_char_offsets(self, tmp_pdf_chinese: Path) -> None:
         """Chinese paragraphs should have accurate char offsets."""

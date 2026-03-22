@@ -1,0 +1,14 @@
+{
+  "tc005": {
+    "mode": "generated",
+    "manifest_label": "generated://opendocs/s4_search_corpus"
+  },
+  "tc018": {
+    "mode": "fixture",
+    "relative_path": "tests/fixtures/generated/corpus_main",
+    "required_documents": [
+      "research_paper.pdf",
+      "meeting_notes.md"
+    ]
+  }
+}

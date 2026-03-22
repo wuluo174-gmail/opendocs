@@ -18,8 +18,28 @@ from opendocs.domain.models import (
     KnowledgeItemModel,
     MemoryItemModel,
     RelationEdgeModel,
+    SourceRootModel,
 )
 from opendocs.storage.db import build_sqlite_engine, init_db
+from opendocs.utils.path_facts import derive_directory_facts
+
+
+def _add_source_root(session: Session, *, path: str) -> SourceRootModel:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    source_root = SourceRootModel(
+        source_root_id=str(uuid.uuid4()),
+        path=path,
+        label="seed test source",
+        exclude_rules_json={},
+        recursive=True,
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(source_root)
+    session.flush()
+    return source_root
+
 
 _SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "seed_demo_data.py"
 _SEED_SPEC = importlib.util.spec_from_file_location("seed_demo_data_script", _SCRIPT_PATH)
@@ -71,13 +91,20 @@ def test_seed_demo_data_inserts_records(db_path: Path) -> None:
         with Session(engine) as session:
             chunk = session.scalar(select(ChunkModel))
             document = session.scalar(select(DocumentModel))
+            source_root = session.scalar(select(SourceRootModel))
             assert chunk is not None
             assert document is not None
+            assert source_root is not None
             assert chunk.char_end <= len(chunk.text)
             assert chunk.paragraph_start == 0
             assert chunk.paragraph_end == 0
             assert document.size_bytes == Path(document.path).stat().st_size
             assert Path(document.path).is_relative_to(db_path.parent.resolve())
+            assert document.source_root_id == source_root.source_root_id
+            assert document.source_path == document.path
+            assert source_root.path == str(Path(document.path).parent)
+            assert document.directory_path == str(Path(document.path).parent).replace("\\", "/")
+            assert document.relative_directory_path == "demo"
     finally:
         engine.dispose()
 
@@ -113,13 +140,20 @@ def test_seed_demo_data_handles_existing_business_keys(db_path: Path) -> None:
     demo_doc_path, demo_doc_relative_path, _ = _SEED_MODULE.resolve_seed_paths(db_path)
     try:
         with Session(engine) as session:
+            source_root = _add_source_root(session, path=str(Path(demo_doc_path).parent))
             existing_doc_id = str(uuid.uuid4())
+            directory_path, relative_directory_path = derive_directory_facts(
+                demo_doc_path,
+                demo_doc_relative_path,
+            )
             session.add(
                 DocumentModel(
                     doc_id=existing_doc_id,
                     path=demo_doc_path,
                     relative_path=demo_doc_relative_path,
-                    source_root_id=str(uuid.uuid4()),
+                    directory_path=directory_path,
+                    relative_directory_path=relative_directory_path,
+                    source_root_id=source_root.source_root_id,
                     source_path=demo_doc_path,
                     hash_sha256="d" * 64,
                     title="Existing Doc",

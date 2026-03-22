@@ -1,0 +1,9 @@
+Technical Debt Assessment Report
+
+UNIQUE_KW_003
+
+The codebase analysis revealed 47 instances of deprecated API usage. Priority items
+include migrating from the legacy ORM to the new query builder and updating all
+third-party dependencies to their latest stable versions.
+
+Estimated effort for full remediation is 3 developer-weeks.

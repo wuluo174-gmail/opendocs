@@ -1,0 +1,29 @@
+{
+  "cases": [
+    {
+      "id": "S4-FC-001",
+      "query": "目录过滤专项样本",
+      "expect_doc": "projects/alpha/alpha_directory_note.md",
+      "directory_prefixes_relative": ["projects/alpha"]
+    },
+    {
+      "id": "S4-FC-002",
+      "query": "目录过滤专项样本",
+      "expect_doc": "projects/alpha/alpha_directory_note.md",
+      "directory_prefixes_absolute": ["projects/alpha"]
+    },
+    {
+      "id": "S4-FC-003",
+      "query": "项目",
+      "expect_doc": "zh_project_plan.md",
+      "use_primary_source_root": true,
+      "categories": ["Project"],
+      "tags": ["Roadmap", "Shared-Source"],
+      "sensitivity_levels": ["Sensitive"],
+      "time_range": {
+        "start": "2026-03-01T00:00:00",
+        "end": "2026-03-20T23:59:59"
+      }
+    }
+  ]
+}

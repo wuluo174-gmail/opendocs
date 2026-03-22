@@ -1,5 +1,6 @@
 """OpenDocs parsers – unified document parsing."""
 
+from opendocs.domain.document_metadata import DocumentMetadata
 from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument, ParseError, ParserRegistry
 from opendocs.parsers.docx_parser import DocxParser
 from opendocs.parsers.md_parser import MdParser
@@ -10,6 +11,7 @@ from opendocs.parsers.txt_parser import TxtParser
 __all__ = [
     "BaseParser",
     "Paragraph",
+    "DocumentMetadata",
     "ParseError",
     "ParsedDocument",
     "ParserRegistry",
