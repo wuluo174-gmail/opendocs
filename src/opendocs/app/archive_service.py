@@ -75,6 +75,13 @@ class ArchiveService:
         flush_audit_to_jsonl(audit)
         return plan.plan_id
 
+    def get_plan(self, plan_id: str) -> FileOperationPlanModel:
+        with session_scope(self._engine) as session:
+            plan = PlanRepository(session).get_by_id(plan_id)
+            if plan is None:
+                raise OpenDocsError(f"plan not found: {plan_id}")
+            return plan
+
     def approve(self, plan_id: str) -> FileOperationPlanModel:
         with session_scope(self._engine) as session:
             svc = FileOperationService(session)

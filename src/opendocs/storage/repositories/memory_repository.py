@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -65,6 +67,28 @@ class MemoryRepository:
         memory_item.updated_at = utcnow_naive()
         self._session.flush()
         return True
+
+    def update_content(self, memory_id: str, content: str) -> MemoryItemModel | None:
+        memory_item = self.get_by_id(memory_id)
+        if memory_item is None:
+            return None
+        memory_item.content = content
+        memory_item.updated_at = utcnow_naive()
+        self._session.flush()
+        return memory_item
+
+    def list_expired_candidates(self, m1_ttl_days: int) -> list[MemoryItemModel]:
+        """Return active M1 memories whose TTL has elapsed."""
+        cutoff = utcnow_naive() - timedelta(days=m1_ttl_days)
+        statement = (
+            select(MemoryItemModel)
+            .where(
+                MemoryItemModel.memory_type == "M1",
+                MemoryItemModel.status == "active",
+                MemoryItemModel.created_at < cutoff,
+            )
+        )
+        return list(self._session.scalars(statement))
 
     def delete(self, memory_id: str, *, allow_delete: bool = False) -> bool:
         if not allow_delete:

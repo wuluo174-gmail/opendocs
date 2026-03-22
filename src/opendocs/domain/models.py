@@ -57,6 +57,12 @@ AUDIT_OPERATIONS = frozenset(
         # S7 additions
         "draft_generate",
         "draft_save",
+        # S8 additions
+        "memory_disable",
+        "memory_delete",
+        "memory_correct",
+        "memory_confirm",
+        "memory_expire",
     }
 )
 

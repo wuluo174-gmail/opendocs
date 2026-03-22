@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from itertools import combinations
 
 from opendocs.retrieval.evidence import Citation, SearchResult
@@ -118,3 +119,52 @@ def _extract_numbers_with_context(text: str) -> list[tuple[str, str]]:
         if context:
             pairs.append((context, m.group(0)))
     return pairs
+
+
+# ── Memory vs document evidence conflict ──────────────────────────────
+
+
+@dataclass(frozen=True)
+class MemoryConflict:
+    """A detected contradiction between a memory entry and document evidence."""
+
+    memory_id: str
+    memory_key: str
+    memory_content: str
+    conflicting_chunk_id: str
+    conflict_type: str  # "negation" | "numeric"
+    warning: str = "记忆可能陈旧或错误"
+
+
+def detect_memory_evidence_conflicts(
+    memories: list[tuple[str, str, str]],
+    evidence_texts: dict[str, str],
+) -> list[MemoryConflict]:
+    """Detect conflicts between memory entries and document evidence.
+
+    *memories* is a list of ``(memory_id, key, content)`` tuples.
+    *evidence_texts* maps chunk_id → chunk text.
+
+    Document evidence always wins — this function only identifies where
+    they disagree so the caller can prompt the user.
+    """
+    conflicts: list[MemoryConflict] = []
+    for memory_id, key, content in memories:
+        for chunk_id, chunk_text in evidence_texts.items():
+            if _has_negation_conflict(content, chunk_text):
+                conflicts.append(MemoryConflict(
+                    memory_id=memory_id,
+                    memory_key=key,
+                    memory_content=content,
+                    conflicting_chunk_id=chunk_id,
+                    conflict_type="negation",
+                ))
+            elif _has_numeric_conflict(content, chunk_text):
+                conflicts.append(MemoryConflict(
+                    memory_id=memory_id,
+                    memory_key=key,
+                    memory_content=content,
+                    conflicting_chunk_id=chunk_id,
+                    conflict_type="numeric",
+                ))
+    return conflicts

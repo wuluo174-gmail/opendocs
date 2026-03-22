@@ -1,13 +1,17 @@
 """Application service exports."""
 
 from .file_operation_service import FileOperationService
-from .memory_service import MemoryService
 
 # Lazy imports to avoid circular dependency:
+# memory/service → app._audit_helpers → app.__init__ → memory_service → memory/service
 # index_builder → _audit_helpers → app.__init__ → index_service → index_builder
 
 
 def __getattr__(name: str) -> object:
+    if name == "MemoryService":
+        from opendocs.memory.service import MemoryService
+
+        return MemoryService
     if name == "IndexService":
         from .index_service import IndexService
 
