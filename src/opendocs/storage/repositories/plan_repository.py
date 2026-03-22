@@ -53,6 +53,15 @@ class PlanRepository:
         self._session.flush()
         return True
 
+    def get_latest_by_status(self, status: str) -> FileOperationPlanModel | None:
+        statement = (
+            select(FileOperationPlanModel)
+            .where(FileOperationPlanModel.status == status)
+            .order_by(FileOperationPlanModel.executed_at.desc())
+            .limit(1)
+        )
+        return self._session.scalars(statement).first()
+
     def delete(self, plan_id: str, *, allow_delete: bool = False) -> bool:
         if not allow_delete:
             raise DeleteNotAllowedError(

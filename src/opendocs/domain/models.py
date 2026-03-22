@@ -50,6 +50,10 @@ AUDIT_OPERATIONS = frozenset(
         "index_incremental",
         "watcher_event",
         "remove_document",
+        # S6 additions
+        "classify",
+        "archive_plan",
+        "rollback_execute",
     }
 )
 
