@@ -7,8 +7,7 @@ import uuid
 
 from opendocs.generation.insight_extractor import extract_insights
 from opendocs.generation.models import SummaryResponse
-from opendocs.provider.base import GenerateRequest
-from opendocs.provider.mock import MockProvider
+from opendocs.provider.base import GenerateRequest, LLMProvider
 from opendocs.retrieval.evidence import Citation, SearchResult
 
 _SUMMARY_SYSTEM = (
@@ -25,7 +24,7 @@ _SUMMARY_SYSTEM = (
 class SummaryPipeline:
     """Summarize multiple documents with insight extraction."""
 
-    def __init__(self, provider: MockProvider) -> None:
+    def __init__(self, provider: LLMProvider) -> None:
         self._provider = provider
 
     def summarize(

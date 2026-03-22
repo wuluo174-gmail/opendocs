@@ -8,8 +8,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from opendocs.generation.models import Draft
-from opendocs.provider.base import GenerateRequest
-from opendocs.provider.mock import MockProvider
+from opendocs.provider.base import GenerateRequest, LLMProvider
 from opendocs.retrieval.evidence import SearchResult
 from opendocs.utils.time import utcnow_naive
 
@@ -35,7 +34,7 @@ def build_evidence_prompt(
 class GenerationPipeline:
     """Template or free-form generation with citation preservation."""
 
-    def __init__(self, provider: MockProvider) -> None:
+    def __init__(self, provider: LLMProvider) -> None:
         self._provider = provider
         self._env = Environment(
             loader=FileSystemLoader(_TEMPLATE_DIR),

@@ -7,7 +7,6 @@
 [app]
 language = "zh-CN"
 output_dir = "OpenDocs_Output"
-local_only = true
 
 [index]
 watch_changes = true
@@ -25,6 +24,14 @@ m1_ttl_days = 30
 m2_enabled = false
 
 [provider]
+# Privacy mode: "local" (0 external calls), "hybrid" (local-first), "cloud"
 default_mode = "local"
+# LLM provider: mock, ollama, openai, anthropic, qwen, zhipu
 llm_provider = "ollama"
 embedding_provider = "local"
+# Ollama endpoint (localhost, classified as LOCAL)
+ollama_url = "http://localhost:11434"
+# Cloud provider / model (only used when mode != local)
+cloud_provider = "openai"
+cloud_model = ""
+# API keys are stored in OS keyring, never in this file.

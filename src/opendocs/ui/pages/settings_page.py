@@ -1,4 +1,4 @@
-"""Settings page — root directory management, mode, provider, first-time indexing."""
+"""Settings page — root directory management, mode, provider, API key, first-time indexing."""
 
 from __future__ import annotations
 
@@ -7,9 +7,11 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QVBoxLayout,
@@ -18,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from opendocs.app.index_service import IndexService
 from opendocs.app.source_service import SourceService
+from opendocs.provider.keystore import KeyStore, mask_key
 
 
 class _IndexWorker(QThread):
@@ -41,7 +44,7 @@ class _IndexWorker(QThread):
 
 
 class SettingsPage(QWidget):
-    """Configure source roots and trigger first-time indexing."""
+    """Configure source roots, privacy mode, provider, and API keys."""
 
     setup_complete = Signal()
 
@@ -54,6 +57,7 @@ class SettingsPage(QWidget):
         super().__init__(parent)
         self._source_svc = source_service
         self._index_svc = index_service
+        self._key_store = KeyStore()
         self._worker: _IndexWorker | None = None
 
         self._build_ui()
@@ -69,16 +73,36 @@ class SettingsPage(QWidget):
         path_row.addWidget(self.path_input, 1)
         path_row.addWidget(browse_btn)
 
+        # Privacy mode selector.
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["local", "hybrid"])
+        self.mode_combo.addItems(["local", "hybrid", "cloud"])
+
+        # Provider selector.
         self.provider_combo = QComboBox()
-        self.provider_combo.addItems(["mock", "ollama"])
+        self.provider_combo.addItems(["mock", "ollama", "openai", "anthropic", "qwen", "zhipu"])
 
         config_row = QHBoxLayout()
         config_row.addWidget(QLabel("Mode:"))
         config_row.addWidget(self.mode_combo)
         config_row.addWidget(QLabel("Provider:"))
         config_row.addWidget(self.provider_combo)
+
+        # Network mode indicator (read-only).
+        self.mode_label = QLabel("Network: local")
+
+        # API key management.
+        set_key_btn = QPushButton("Set API Key...")
+        set_key_btn.clicked.connect(self._set_api_key)
+        test_btn = QPushButton("Test")
+        test_btn.clicked.connect(self._test_provider)
+
+        key_row = QHBoxLayout()
+        key_row.addWidget(set_key_btn)
+        key_row.addWidget(test_btn)
+        key_row.addWidget(self.mode_label)
+        key_row.addStretch()
+
+        self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
 
         self.add_button = QPushButton("Add & Index")
         self.add_button.clicked.connect(self._add_and_index)
@@ -92,10 +116,34 @@ class SettingsPage(QWidget):
         layout = QVBoxLayout(self)
         layout.addLayout(path_row)
         layout.addLayout(config_row)
+        layout.addLayout(key_row)
         layout.addWidget(self.add_button)
         layout.addWidget(self.source_list)
         layout.addWidget(self.progress)
         layout.addWidget(self.status_label)
+
+    def _on_mode_changed(self, mode: str) -> None:
+        self.mode_label.setText(f"Network: {mode}")
+
+    def _set_api_key(self) -> None:
+        provider = self.provider_combo.currentText()
+        key, ok = QInputDialog.getText(
+            self, "Set API Key", f"Enter API key for {provider}:"
+        )
+        if ok and key.strip():
+            self._key_store.set(provider, key.strip())
+            self.status_label.setText(f"Key saved for {provider}: {mask_key(key.strip())}")
+
+    def _test_provider(self) -> None:
+        provider = self.provider_combo.currentText()
+        if provider in ("mock",):
+            QMessageBox.information(self, "Test", f"{provider} is always available.")
+            return
+        has_key = self._key_store.has(provider)
+        if provider in ("openai", "anthropic", "qwen", "zhipu") and not has_key:
+            QMessageBox.warning(self, "Test", f"No API key configured for {provider}.")
+        else:
+            QMessageBox.information(self, "Test", f"{provider} key configured: {has_key}")
 
     def _browse(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select Document Root")

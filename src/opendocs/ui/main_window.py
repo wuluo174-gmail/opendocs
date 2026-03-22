@@ -24,7 +24,7 @@ from opendocs.app.source_service import SourceService
 from opendocs.app.summary_service import SummaryService
 from opendocs.config.settings import OpenDocsSettings
 from opendocs.memory.service import MemoryService
-from opendocs.provider.mock import MockProvider
+from opendocs.provider.service import create_provider_service
 from opendocs.ui.pages.archive_page import ArchivePage
 from opendocs.ui.pages.generation_page import GenerationPage
 from opendocs.ui.pages.insights_page import InsightsPage
@@ -59,7 +59,7 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------
     def _init_services(self) -> None:
-        provider = MockProvider()
+        provider = create_provider_service(self._settings, self._engine)
         rs = self._settings.retrieval
         self._source_svc = SourceService(self._engine, hnsw_path=self._hnsw_path)
         self._index_svc = IndexService(

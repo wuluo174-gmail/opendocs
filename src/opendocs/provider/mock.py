@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from opendocs.provider.base import GenerateRequest, GenerateResponse
+from opendocs.provider.base import GenerateRequest, GenerateResponse, ProviderKind
 
 
 class MockProvider:
@@ -13,6 +13,7 @@ class MockProvider:
     Deterministic: same input always produces same output.
     """
 
+    kind = ProviderKind.LOCAL
     MODEL_NAME = "mock-deterministic-v1"
 
     def generate(self, request: GenerateRequest) -> GenerateResponse:

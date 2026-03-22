@@ -63,6 +63,8 @@ AUDIT_OPERATIONS = frozenset(
         "memory_correct",
         "memory_confirm",
         "memory_expire",
+        # S10 additions
+        "provider_call",
     }
 )
 

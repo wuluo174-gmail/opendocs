@@ -16,6 +16,7 @@ from opendocs.config.settings import RetrievalSettings
 from opendocs.generation.markdown_exporter import export_markdown
 from opendocs.generation.models import SummaryResponse
 from opendocs.generation.summary_pipeline import SummaryPipeline
+from opendocs.provider.base import LLMProvider
 from opendocs.provider.mock import MockProvider
 from opendocs.retrieval.filters import SearchFilter
 from opendocs.storage.db import session_scope
@@ -32,7 +33,7 @@ class SummaryService:
         engine: Engine,
         *,
         hnsw_path: Path,
-        provider: MockProvider | None = None,
+        provider: LLMProvider | None = None,
         retrieval_settings: RetrievalSettings | None = None,
     ) -> None:
         self._engine = engine

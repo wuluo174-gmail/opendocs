@@ -23,7 +23,7 @@ def _patch_services():
         "opendocs.ui.main_window.SummaryService",
         "opendocs.ui.main_window.ArchiveService",
         "opendocs.ui.main_window.MemoryService",
-        "opendocs.ui.main_window.MockProvider",
+        "opendocs.ui.main_window.create_provider_service",
     ]
     mocks = {}
     patches = []

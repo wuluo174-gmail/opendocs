@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import time
 
-from opendocs.provider.base import GenerateRequest
-from opendocs.provider.mock import MockProvider
+from opendocs.provider.base import GenerateRequest, LLMProvider
 from opendocs.qa.citation_validator import CitationValidator, strip_invalid_citations
 from opendocs.qa.evidence_gate import EvidenceGate
 from opendocs.qa.models import AnswerStatus, EvidencePackage, GateVerdict, QAResponse
@@ -26,7 +25,7 @@ class QAPipeline:
 
     def __init__(
         self,
-        provider: MockProvider,
+        provider: LLMProvider,
         *,
         min_evidence: int = 1,
         min_score: float = 0.15,

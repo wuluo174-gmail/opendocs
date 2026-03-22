@@ -7,7 +7,7 @@ import platform
 import tomllib
 from pathlib import Path
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from opendocs.exceptions import ConfigError
 
@@ -15,7 +15,6 @@ from opendocs.exceptions import ConfigError
 class AppSettings(BaseModel):
     language: str = "zh-CN"
     output_dir: str = "OpenDocs_Output"
-    local_only: bool = True
 
 
 class IndexSettings(BaseModel):
@@ -40,6 +39,16 @@ class ProviderSettings(BaseModel):
     default_mode: str = "local"
     llm_provider: str = "ollama"
     embedding_provider: str = "local"
+    ollama_url: str = "http://localhost:11434"
+    cloud_provider: str = "openai"
+    cloud_model: str = ""
+
+    @field_validator("default_mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        if v not in ("local", "hybrid", "cloud"):
+            raise ValueError(f"invalid privacy mode: {v}, must be local/hybrid/cloud")
+        return v
 
 
 class QASettings(BaseModel):

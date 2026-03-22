@@ -811,5 +811,5 @@ def main(argv: list[str] | None = None) -> int:
     audit_logger.info("OpenDocs audit logger started")
     task_logger.info("OpenDocs task logger started")
     print("OpenDocs baseline started.")
-    print(f"language={settings.app.language} local_only={settings.app.local_only}")
+    print(f"language={settings.app.language} mode={settings.provider.default_mode}")
     return 0

@@ -13,6 +13,7 @@ from opendocs.app.search_service import SearchService
 from opendocs.config.settings import RetrievalSettings
 from opendocs.generation.draft_pipeline import GenerationPipeline
 from opendocs.generation.models import Draft
+from opendocs.provider.base import LLMProvider
 from opendocs.provider.mock import MockProvider
 from opendocs.retrieval.filters import SearchFilter
 from opendocs.storage.db import session_scope
@@ -29,7 +30,7 @@ class GenerationService:
         engine: Engine,
         *,
         hnsw_path: Path,
-        provider: MockProvider | None = None,
+        provider: LLMProvider | None = None,
         retrieval_settings: RetrievalSettings | None = None,
         output_dir: str = "OpenDocs_Output",
     ) -> None:

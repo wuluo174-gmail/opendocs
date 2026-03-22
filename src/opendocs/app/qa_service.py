@@ -15,6 +15,7 @@ from opendocs.app._audit_helpers import (
 )
 from opendocs.app.search_service import SearchService
 from opendocs.config.settings import RetrievalSettings
+from opendocs.provider.base import LLMProvider
 from opendocs.provider.mock import MockProvider
 from opendocs.qa.models import EvidencePackage, QAResponse
 from opendocs.qa.qa_pipeline import QAPipeline
@@ -33,7 +34,7 @@ class QAService:
         engine: Engine,
         *,
         hnsw_path: Path,
-        provider: MockProvider | None = None,
+        provider: LLMProvider | None = None,
         retrieval_settings: RetrievalSettings | None = None,
         min_evidence: int = 1,
         min_score: float = 0.15,
