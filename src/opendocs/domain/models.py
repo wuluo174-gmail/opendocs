@@ -54,6 +54,9 @@ AUDIT_OPERATIONS = frozenset(
         "classify",
         "archive_plan",
         "rollback_execute",
+        # S7 additions
+        "draft_generate",
+        "draft_save",
     }
 )
 

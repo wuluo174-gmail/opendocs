@@ -1,8 +1,9 @@
-"""Generation data structures — InsightItem, SummaryResponse."""
+"""Generation data structures — InsightItem, SummaryResponse, Draft."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from opendocs.retrieval.evidence import Citation
 
@@ -26,3 +27,17 @@ class SummaryResponse:
     citations: list[Citation]
     trace_id: str
     duration_sec: float
+
+
+@dataclass
+class Draft:
+    """Mutable document draft — editable before save confirmation."""
+
+    draft_id: str
+    template_name: str | None
+    content: str
+    citations: list[Citation]
+    source_doc_ids: list[str]
+    trace_id: str
+    created_at: datetime
+    saved: bool = False
