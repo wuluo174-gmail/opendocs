@@ -6,10 +6,12 @@ import json
 from dataclasses import dataclass
 from functools import lru_cache
 
-from opendocs.retrieval.stage_golden_queries import load_s4_hybrid_search_queries
 from opendocs.retrieval.stage_asset_loader import read_stage_asset_text
+from opendocs.retrieval.stage_golden_queries import load_s4_hybrid_search_queries
 
-S4_ACCEPTANCE_CAPTURE_CASES_ASSET_REF = "src/opendocs/retrieval/assets/s4_acceptance_capture_cases.json"
+S4_ACCEPTANCE_CAPTURE_CASES_ASSET_REF = (
+    "src/opendocs/retrieval/assets/s4_acceptance_capture_cases.json"
+)
 
 
 @dataclass(frozen=True)
@@ -70,14 +72,18 @@ def _parse_tc005_cases(raw_cases: object) -> tuple[StageTc005CaptureCase, ...]:
         if golden_query is None:
             raise ValueError(f"S4 TC-005 capture case references unknown query_id: {query_id}")
         if golden_query.expect_doc is None or golden_query.expect_empty:
-            raise ValueError(f"S4 TC-005 capture case must reference a non-empty match query: {query_id}")
+            raise ValueError(
+                f"S4 TC-005 capture case must reference a non-empty match query: {query_id}"
+            )
         if not note:
             raise ValueError(f"S4 TC-005 capture case missing note: {slug}")
         seen_slugs.add(slug)
         seen_query_ids.add(query_id)
         cases.append(StageTc005CaptureCase(slug=slug, query_id=query_id, note=note))
     if len(cases) != 2:
-        raise ValueError(f"S4 TC-005 capture cases must contain exactly 2 entries, found {len(cases)}")
+        raise ValueError(
+            f"S4 TC-005 capture cases must contain exactly 2 entries, found {len(cases)}"
+        )
     return tuple(cases)
 
 
@@ -107,7 +113,9 @@ def _parse_tc018_cases(raw_cases: object) -> tuple[StageTc018CaptureCase, ...]:
         if not expected_file_name:
             raise ValueError(f"S4 TC-018 capture case missing expected_file_name: {slug}")
         if expected_file_name in seen_file_names:
-            raise ValueError(f"duplicate S4 TC-018 capture expected_file_name: {expected_file_name}")
+            raise ValueError(
+                f"duplicate S4 TC-018 capture expected_file_name: {expected_file_name}"
+            )
         if not note:
             raise ValueError(f"S4 TC-018 capture case missing note: {slug}")
         seen_slugs.add(slug)
@@ -123,7 +131,12 @@ def _parse_tc018_cases(raw_cases: object) -> tuple[StageTc018CaptureCase, ...]:
             )
         )
     if len(cases) != 2:
-        raise ValueError(f"S4 TC-018 capture cases must contain exactly 2 entries, found {len(cases)}")
+        raise ValueError(
+            f"S4 TC-018 capture cases must contain exactly 2 entries, found {len(cases)}"
+        )
     if locator_kinds != {"page", "paragraph"}:
-        raise ValueError(f"S4 TC-018 capture cases must cover page and paragraph locators: {sorted(locator_kinds)}")
+        raise ValueError(
+            "S4 TC-018 capture cases must cover page and paragraph locators: "
+            f"{sorted(locator_kinds)}"
+        )
     return tuple(cases)

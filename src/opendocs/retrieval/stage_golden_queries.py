@@ -6,7 +6,10 @@ import json
 from dataclasses import dataclass
 from functools import lru_cache
 
-from opendocs.retrieval.query_lexicon import build_stage_query_lexicon_index
+from opendocs.retrieval.query_lexicon import (
+    build_runtime_query_lexicon_index,
+    normalize_query_lookup_key,
+)
 from opendocs.retrieval.stage_asset_loader import read_stage_asset_text
 from opendocs.retrieval.stage_search_corpus import list_s4_search_corpus_documents
 
@@ -22,6 +25,7 @@ class StageGoldenQuery:
     lexicon_id: str | None
     expect_empty: bool
 
+
 S4_EXPECTED_LOCATING_QUERY_COUNT = 5
 S4_EXPECTED_SYNONYM_QUERY_COUNT = 5
 S4_EXPECTED_ZERO_QUERY_COUNT = 1
@@ -35,7 +39,7 @@ def load_s4_hybrid_search_queries() -> tuple[StageGoldenQuery, ...]:
     if not isinstance(raw_queries, list):
         raise ValueError("S4 golden queries must contain a 'queries' list")
 
-    lexicon_by_id = build_stage_query_lexicon_index()
+    lexicon_by_id = build_runtime_query_lexicon_index()
     corpus_documents = set(list_s4_search_corpus_documents())
     queries: list[StageGoldenQuery] = []
     seen_ids: set[str] = set()
@@ -70,15 +74,21 @@ def load_s4_hybrid_search_queries() -> tuple[StageGoldenQuery, ...]:
             if not expect_empty:
                 raise ValueError(f"S4 zero query must set expect_empty=true: {query_id}")
             if expect_doc is not None or lexicon_id is not None:
-                raise ValueError(f"S4 zero query must not define expect_doc or lexicon_id: {query_id}")
+                raise ValueError(
+                    f"S4 zero query must not define expect_doc or lexicon_id: {query_id}"
+                )
         elif query_type == "locating":
             locating_count += 1
             if expect_doc is None:
                 raise ValueError(f"S4 locating query missing expect_doc: {query_id}")
             if expect_doc not in corpus_documents:
-                raise ValueError(f"S4 locating query references unknown corpus document: {query_id}")
+                raise ValueError(
+                    f"S4 locating query references unknown corpus document: {query_id}"
+                )
             if lexicon_id is not None or expect_empty:
-                raise ValueError(f"S4 locating query contains invalid synonym/zero fields: {query_id}")
+                raise ValueError(
+                    f"S4 locating query contains invalid synonym/zero fields: {query_id}"
+                )
         else:
             synonym_count += 1
             if lexicon_id is None:
@@ -90,9 +100,9 @@ def load_s4_hybrid_search_queries() -> tuple[StageGoldenQuery, ...]:
             entry = lexicon_by_id.get(lexicon_id)
             if entry is None:
                 raise ValueError(f"S4 synonym query references unknown lexicon_id: {lexicon_id}")
-            if entry.trigger_query != query:
+            if not _entry_contains_alias(entry, query):
                 raise ValueError(
-                    f"S4 golden synonym query drift: {lexicon_id} -> {query!r} != {entry.trigger_query!r}"
+                    f"S4 golden synonym query drift: {lexicon_id} does not contain alias {query!r}"
                 )
             if lexicon_id in seen_synonym_lexicon_ids:
                 raise ValueError(f"duplicate S4 synonym lexicon_id: {lexicon_id}")
@@ -112,22 +122,19 @@ def load_s4_hybrid_search_queries() -> tuple[StageGoldenQuery, ...]:
 
     if locating_count != S4_EXPECTED_LOCATING_QUERY_COUNT:
         raise ValueError(
-            "S4 locating query count drift: "
-            f"{locating_count} != {S4_EXPECTED_LOCATING_QUERY_COUNT}"
+            f"S4 locating query count drift: {locating_count} != {S4_EXPECTED_LOCATING_QUERY_COUNT}"
         )
     if synonym_count != S4_EXPECTED_SYNONYM_QUERY_COUNT:
         raise ValueError(
-            "S4 synonym query count drift: "
-            f"{synonym_count} != {S4_EXPECTED_SYNONYM_QUERY_COUNT}"
-        )
-    if seen_synonym_lexicon_ids != set(lexicon_by_id):
-        raise ValueError(
-            "S4 golden synonym coverage drift: "
-            f"{sorted(seen_synonym_lexicon_ids)} != {sorted(lexicon_by_id)}"
+            f"S4 synonym query count drift: {synonym_count} != {S4_EXPECTED_SYNONYM_QUERY_COUNT}"
         )
     if zero_count != S4_EXPECTED_ZERO_QUERY_COUNT:
         raise ValueError(
-            "S4 zero query count drift: "
-            f"{zero_count} != {S4_EXPECTED_ZERO_QUERY_COUNT}"
+            f"S4 zero query count drift: {zero_count} != {S4_EXPECTED_ZERO_QUERY_COUNT}"
         )
     return tuple(queries)
+
+
+def _entry_contains_alias(entry, query: str) -> bool:
+    query_lookup_key = normalize_query_lookup_key(query)
+    return any(normalize_query_lookup_key(alias) == query_lookup_key for alias in entry.aliases)

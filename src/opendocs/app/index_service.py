@@ -23,7 +23,7 @@ from opendocs.domain.models import (
 from opendocs.indexing.chunker import Chunker
 from opendocs.indexing.hnsw_manager import HnswManager
 from opendocs.indexing.index_builder import IndexBatchResult, IndexBuilder
-from opendocs.indexing.scanner import ScanResult, Scanner
+from opendocs.indexing.scanner import Scanner, ScanResult
 from opendocs.indexing.watcher import IndexWatcher
 from opendocs.parsers import create_default_registry
 from opendocs.retrieval.embedder import LocalNgramEmbedder
@@ -119,9 +119,9 @@ class IndexService:
         with session_scope(self._engine) as session:
             active_source_count = (
                 session.scalar(
-                    select(func.count()).select_from(SourceRootModel).where(
-                        SourceRootModel.is_active.is_(True)
-                    )
+                    select(func.count())
+                    .select_from(SourceRootModel)
+                    .where(SourceRootModel.is_active.is_(True))
                 )
                 or 0
             )
@@ -130,9 +130,9 @@ class IndexService:
             )
             active_document_count = (
                 session.scalar(
-                    select(func.count()).select_from(DocumentModel).where(
-                        DocumentModel.is_deleted_from_fs.is_(False)
-                    )
+                    select(func.count())
+                    .select_from(DocumentModel)
+                    .where(DocumentModel.is_deleted_from_fs.is_(False))
                 )
                 or 0
             )

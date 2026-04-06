@@ -1,4 +1,12 @@
-"""Deterministic artifact capture helpers for S4 acceptance evidence."""
+"""S4 acceptance harness owned by the acceptance layer, not by UI components.
+
+This module owns the acceptance-runtime lifecycle:
+stage assets -> temporary runtime (SQLite/HNSW) -> SearchService -> SearchWindow -> artifacts.
+
+`opendocs.ui` keeps only reusable widgets. The harness composes them from the
+outside, which preserves the S4 boundary that UI must not directly own DB/file
+runtime bootstrapping.
+"""
 
 from __future__ import annotations
 
@@ -15,15 +23,15 @@ from opendocs.app.index_service import IndexService
 from opendocs.app.search_service import SearchService
 from opendocs.app.source_service import SourceService
 from opendocs.domain.document_metadata import DocumentMetadata
-from opendocs.retrieval.stage_acceptance_corpora import (
-    materialize_s4_tc005_acceptance_corpus,
-    resolve_s4_tc018_corpus_dir,
-)
+from opendocs.retrieval.filters import SearchFilter
 from opendocs.retrieval.stage_acceptance_capture_cases import (
     StageTc005CaptureCase,
     load_s4_acceptance_capture_cases,
 )
-from opendocs.retrieval.filters import SearchFilter
+from opendocs.retrieval.stage_acceptance_corpora import (
+    materialize_s4_tc005_acceptance_corpus,
+    resolve_s4_tc018_corpus_dir,
+)
 from opendocs.retrieval.stage_acceptance_provenance import (
     build_s4_tc005_input_provenance,
     build_s4_tc018_input_provenance,
@@ -36,6 +44,20 @@ from opendocs.ui.search_window import SearchWindow
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QApplication, QListWidgetItem
+
+
+@dataclass(frozen=True)
+class AcceptanceRuntimePaths:
+    runtime_dir: Path
+    db_path: Path
+    hnsw_path: Path
+
+
+@dataclass(frozen=True)
+class AcceptanceSearchRuntime:
+    corpus_dir: Path
+    paths: AcceptanceRuntimePaths
+    search_service: SearchService
 
 
 @dataclass(frozen=True)
@@ -119,12 +141,6 @@ class Tc005Manifest:
     query_log_path: str
     input_provenance: dict[str, str]
     artifacts: list[Tc005CapturedArtifact]
-
-
-@dataclass(frozen=True)
-class SearchAcceptanceRuntime:
-    search_service: SearchService
-    source_root_id: str
 
 
 def _repo_root() -> Path:
@@ -233,15 +249,20 @@ def _capture_window_case(
     )
 
 
-def _build_search_service(
+def build_acceptance_search_runtime(
     corpus_dir: Path,
     runtime_dir: Path,
     *,
     source_label: str,
     default_metadata: DocumentMetadata | None = None,
-) -> SearchAcceptanceRuntime:
-    db_path = runtime_dir / "opendocs.db"
-    hnsw_path = runtime_dir / "index" / "hnsw" / "vectors.bin"
+) -> AcceptanceSearchRuntime:
+    resolved_corpus_dir = corpus_dir.resolve()
+    if not resolved_corpus_dir.is_dir():
+        raise FileNotFoundError(f"acceptance corpus directory not found: {resolved_corpus_dir}")
+
+    resolved_runtime_dir = runtime_dir.resolve()
+    db_path = resolved_runtime_dir / "opendocs.db"
+    hnsw_path = resolved_runtime_dir / "index" / "hnsw" / "vectors.bin"
     hnsw_path.parent.mkdir(parents=True, exist_ok=True)
 
     init_db(db_path)
@@ -250,11 +271,17 @@ def _build_search_service(
     source_kwargs: dict[str, object] = {"label": source_label}
     if default_metadata is not None:
         source_kwargs["default_metadata"] = default_metadata
-    source = SourceService(engine).add_source(corpus_dir, **source_kwargs)
+    source = SourceService(engine).add_source(resolved_corpus_dir, **source_kwargs)
     IndexService(engine, hnsw_path=hnsw_path).rebuild_index(source.source_root_id)
-    return SearchAcceptanceRuntime(
+
+    return AcceptanceSearchRuntime(
+        corpus_dir=resolved_corpus_dir,
+        paths=AcceptanceRuntimePaths(
+            runtime_dir=resolved_runtime_dir,
+            db_path=db_path,
+            hnsw_path=hnsw_path,
+        ),
         search_service=SearchService(engine, hnsw_path=hnsw_path),
-        source_root_id=source.source_root_id,
     )
 
 
@@ -281,7 +308,9 @@ def _serialize_tc005_query_log(
         hit_in_top10 = len(response.results) == 0 or response.results[0].score < 0.30
     else:
         assert golden_query.expect_doc is not None
-        hit_in_top10 = any(golden_query.expect_doc in result.path for result in response.results[:top_k])
+        hit_in_top10 = any(
+            golden_query.expect_doc in result.path for result in response.results[:top_k]
+        )
     return Tc005QueryLog(
         query_id=golden_query.query_id,
         query_type=golden_query.query_type,
@@ -304,12 +333,8 @@ def _serialize_tc005_filter_log(
     filter_case: StageFilterCase,
     search_service: SearchService,
     corpus_dir: Path,
-    primary_source_root_id: str,
 ) -> Tc005FilterLog:
-    filters = filter_case.build_filter(
-        corpus_dir=corpus_dir,
-        primary_source_root_id=primary_source_root_id,
-    )
+    filters = filter_case.build_filter(corpus_dir=corpus_dir)
     response = search_service.search(filter_case.query, filters=filters, top_k=10)
     results = [
         {
@@ -342,8 +367,6 @@ def _serialize_search_filter(filters: SearchFilter) -> dict[str, object]:
     payload: dict[str, object] = {}
     if filters.directory_prefixes is not None:
         payload["directory_prefixes"] = list(filters.directory_prefixes)
-    if filters.source_root_ids is not None:
-        payload["source_root_ids"] = list(filters.source_root_ids)
     if filters.categories is not None:
         payload["categories"] = list(filters.categories)
     if filters.tags is not None:
@@ -427,12 +450,12 @@ def capture_s4_tc018_artifacts(
 
     with TemporaryDirectory(prefix="opendocs-tc018-") as runtime:
         capture_cases = load_s4_acceptance_capture_cases()
-        runtime_bundle = _build_search_service(
+        runtime_state = build_acceptance_search_runtime(
             resolved_corpus_dir,
             Path(runtime),
             source_label="S4 TC-018 artifact capture",
         )
-        window = SearchWindow(runtime_bundle.search_service)
+        window = SearchWindow(runtime_state.search_service, auto_open_on_locate=False)
         window.resize(1440, 960)
         window.show()
         _process_events(app)
@@ -492,7 +515,9 @@ def capture_s4_tc005_artifacts(
 ) -> Tc005Manifest:
     resolved_output_dir = output_dir.resolve()
 
-    _ensure_expected_outputs(planned_tc005_output_paths(resolved_output_dir), force=force, case_id="TC-005")
+    _ensure_expected_outputs(
+        planned_tc005_output_paths(resolved_output_dir), force=force, case_id="TC-005"
+    )
 
     from PySide6.QtWidgets import QApplication
 
@@ -514,7 +539,7 @@ def capture_s4_tc005_artifacts(
                 raise FileNotFoundError(f"TC-005 corpus directory not found: {resolved_corpus_dir}")
             manifest_corpus_dir = str(resolved_corpus_dir)
 
-        runtime_bundle = _build_search_service(
+        runtime_state = build_acceptance_search_runtime(
             resolved_corpus_dir,
             runtime_dir,
             source_label="S4 TC-005 artifact capture",
@@ -524,7 +549,7 @@ def capture_s4_tc005_artifacts(
         query_logs = [
             _serialize_tc005_query_log(
                 golden_query=golden_query,
-                search_service=runtime_bundle.search_service,
+                search_service=runtime_state.search_service,
                 top_k=10,
             )
             for golden_query in golden_queries
@@ -532,15 +557,14 @@ def capture_s4_tc005_artifacts(
         filter_logs = [
             _serialize_tc005_filter_log(
                 filter_case=filter_case,
-                search_service=runtime_bundle.search_service,
+                search_service=runtime_state.search_service,
                 corpus_dir=resolved_corpus_dir,
-                primary_source_root_id=runtime_bundle.source_root_id,
             )
             for filter_case in load_s4_search_filter_cases()
         ]
         queries_by_id = {golden_query.query_id: golden_query for golden_query in golden_queries}
 
-        window = SearchWindow(runtime_bundle.search_service)
+        window = SearchWindow(runtime_state.search_service, auto_open_on_locate=False)
         window.resize(1440, 960)
         window.show()
         _process_events(app)

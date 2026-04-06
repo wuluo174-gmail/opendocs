@@ -30,7 +30,11 @@ from opendocs.storage.repositories import (
     RelationRepository,
     SourceRepository,
 )
-from opendocs.utils.path_facts import derive_directory_facts
+from opendocs.utils.path_facts import (
+    build_display_path,
+    derive_directory_facts,
+    derive_source_display_root,
+)
 from opendocs.utils.time import utcnow_naive
 
 SOURCE_ROOT_ID = "00000000-0000-0000-0000-000000000001"
@@ -60,7 +64,7 @@ def resolve_seed_paths(db_path: str | Path) -> tuple[str, str, str]:
     base_dir = Path(db_path).resolve().parent
     demo_path = (base_dir / "demo" / "project_overview.md").resolve()
     archive_path = (base_dir / "archive" / "project_overview.md").resolve()
-    relative_path = demo_path.relative_to(base_dir).as_posix()
+    relative_path = demo_path.name
     return str(demo_path), relative_path, str(archive_path)
 
 
@@ -114,6 +118,10 @@ def seed_demo_data(db_path: str | Path) -> dict[str, int]:
                     SourceRootModel(
                         source_root_id=preferred_source_root_id,
                         path=demo_source_root_path,
+                        display_root=derive_source_display_root(
+                            demo_source_root_path,
+                            source_root_id=preferred_source_root_id,
+                        ),
                         label="Seed Demo Source",
                         exclude_rules_json={},
                         recursive=True,
@@ -138,6 +146,10 @@ def seed_demo_data(db_path: str | Path) -> dict[str, int]:
                         doc_id=document_id,
                         path=demo_doc_path,
                         relative_path=demo_doc_relative_path,
+                        display_path=build_display_path(
+                            source_root.display_root,
+                            demo_doc_relative_path,
+                        ),
                         directory_path=directory_path,
                         relative_directory_path=relative_directory_path,
                         source_root_id=source_root.source_root_id,

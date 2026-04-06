@@ -22,12 +22,13 @@ from opendocs.domain.models import (
     ScanRunModel,
     SourceRootModel,
 )
-from opendocs.utils.path_facts import derive_directory_facts
+from opendocs.utils.path_facts import build_display_path, derive_directory_facts
 
 
 def _directory_fields(path: str, relative_path: str) -> dict[str, str]:
     directory_path, relative_directory_path = derive_directory_facts(path, relative_path)
     return {
+        "display_path": build_display_path("demo", relative_path),
         "directory_path": directory_path,
         "relative_directory_path": relative_directory_path,
     }
@@ -52,6 +53,7 @@ def source_root_id(session: Session) -> str:
     source_root = SourceRootModel(
         source_root_id=str(uuid.uuid4()),
         path="C:/demo",
+        display_root="demo",
         label="test source",
         exclude_rules_json={},
         recursive=True,
@@ -133,7 +135,9 @@ def test_document_hash_must_be_lower_hex_sha256(session: Session, source_root_id
         session.commit()
 
 
-def test_document_file_identity_must_be_unique(session: Session, source_root_id: str) -> None:
+def test_document_file_identity_must_be_unique_only_for_active_rows(
+    session: Session, source_root_id: str
+) -> None:
     now = datetime.now(UTC).replace(tzinfo=None)
     file_identity = "7:11"
     first = DocumentModel(
@@ -152,6 +156,7 @@ def test_document_file_identity_must_be_unique(session: Session, source_root_id:
         modified_at=now,
         parse_status="success",
         sensitivity="internal",
+        is_deleted_from_fs=True,
     )
     second = DocumentModel(
         doc_id=str(uuid.uuid4()),
@@ -170,9 +175,28 @@ def test_document_file_identity_must_be_unique(session: Session, source_root_id:
         parse_status="success",
         sensitivity="internal",
     )
+    duplicate_active = DocumentModel(
+        doc_id=str(uuid.uuid4()),
+        path="C:/demo/identity-3.md",
+        relative_path="identity-3.md",
+        **_directory_fields("C:/demo/identity-3.md", "identity-3.md"),
+        file_identity=file_identity,
+        source_root_id=source_root_id,
+        source_path="C:/demo/identity-3.md",
+        hash_sha256="c" * 64,
+        title="identity three",
+        file_type="md",
+        size_bytes=10,
+        created_at=now,
+        modified_at=now,
+        parse_status="success",
+        sensitivity="internal",
+    )
     session.add(first)
-    session.commit()
     session.add(second)
+    session.commit()
+
+    session.add(duplicate_active)
     with pytest.raises(IntegrityError):
         session.commit()
 
@@ -326,6 +350,7 @@ def test_source_root_default_sensitivity_check_constraint(session: Session) -> N
     source_root = SourceRootModel(
         source_root_id=str(uuid.uuid4()),
         path="C:/demo/source-with-bad-defaults",
+        display_root="source-with-bad-defaults",
         label="bad defaults",
         exclude_rules_json={},
         default_category="project",

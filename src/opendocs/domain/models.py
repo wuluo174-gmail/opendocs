@@ -86,7 +86,12 @@ class DocumentModel(Base):
         ),
         Index("idx_documents_directory_path", "directory_path"),
         Index("idx_documents_relative_directory_path", "relative_directory_path"),
-        Index("idx_documents_file_identity", "file_identity", unique=True),
+        Index(
+            "idx_documents_file_identity",
+            "file_identity",
+            unique=True,
+            sqlite_where=text("file_identity IS NOT NULL AND is_deleted_from_fs = 0"),
+        ),
         CheckConstraint(
             "file_type IN ('txt', 'md', 'docx', 'pdf')",
             name="ck_documents_file_type",
@@ -122,6 +127,7 @@ class DocumentModel(Base):
     doc_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     path: Mapped[str] = mapped_column(Text, nullable=False)
     relative_path: Mapped[str] = mapped_column(Text, nullable=False)
+    display_path: Mapped[str] = mapped_column(Text, nullable=False)
     directory_path: Mapped[str] = mapped_column(Text, nullable=False)
     relative_directory_path: Mapped[str] = mapped_column(Text, nullable=False)
     file_identity: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -439,6 +445,7 @@ class SourceRootModel(Base):
 
     source_root_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     path: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    display_root: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     label: Mapped[str | None] = mapped_column(Text, nullable=True)
     exclude_rules_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     default_category: Mapped[str | None] = mapped_column(Text, nullable=True)

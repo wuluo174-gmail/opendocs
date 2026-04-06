@@ -51,7 +51,7 @@
 该命令默认使用共享的 S4 搜索验收语料生成器
 `src/opendocs/retrieval/stage_search_corpus.py`、阶段黄金查询资产
 `src/opendocs/retrieval/assets/s4_hybrid_search_queries.json`、runtime 同义词词表资产
-`src/opendocs/retrieval/assets/stage_query_lexicon.json`、过滤组合资产
+`src/opendocs/retrieval/assets/query_lexicon.json`、过滤组合资产
 `src/opendocs/retrieval/assets/s4_search_filter_cases.json`、acceptance corpus 资产
 `src/opendocs/retrieval/assets/s4_acceptance_corpora.json`，以及 capture 选择资产
 `src/opendocs/retrieval/assets/s4_acceptance_capture_cases.json`。`TC-005` 的 search environment 还会显式应用

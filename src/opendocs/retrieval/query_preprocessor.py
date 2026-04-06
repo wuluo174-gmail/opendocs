@@ -1,7 +1,8 @@
 """Query preprocessing for FTS5 trigram search.
 
-Normalizes user queries, expands stage-scoped synonym variants, and sanitizes
-FTS5 syntax without adding LIKE fallback paths.
+Normalizes human query text once, then derives a safe FTS MATCH expression from
+that semantic query. The lexical channel owns MATCH syntax; downstream callers
+should never treat raw user input as an FTS program.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from opendocs.retrieval.query_lexicon import (
-    build_stage_query_expansion_index,
+    build_runtime_query_expansion_index,
     normalize_query_lookup_key,
     normalize_query_text,
     parse_query_expansion_index,
@@ -41,20 +42,23 @@ class PreparedQuery:
         return self.variants[0].text
 
 
-# Characters that break FTS5 MATCH syntax when unbalanced/orphaned.
-_FTS5_UNSAFE = re.compile(r"[*^{}():]")
+_FTS5_STRIP_CHARS = re.compile(r"[*^{}():]")
+_FTS5_TOKEN_RE = re.compile(r'"[^"]+"|\S+')
+_FTS5_OPERATOR_TOKENS = frozenset({"AND", "OR", "NOT"})
+_FTS5_BARE_TOKEN_RE = re.compile(r"^[0-9A-Za-z_\u0080-\uffff]+$")
+_FTS5_SEARCHABLE_TOKEN_RE = re.compile(r"[0-9A-Za-z\u0080-\uffff]")
 
 
 class QueryPreprocessor:
     """Transform user queries into a retrieval-ready intent object.
 
-    The preprocessor owns normalization and stage-scoped synonym expansion, so
+    The preprocessor owns normalization and runtime-owned synonym expansion, so
     downstream lexical and dense search operate on the same query variants.
     """
 
     def __init__(self, expansions: Mapping[str, Sequence[str]] | None = None) -> None:
         if expansions is None:
-            self._expansions = build_stage_query_expansion_index()
+            self._expansions = build_runtime_query_expansion_index()
             return
         self._expansions = parse_query_expansion_index(dict(expansions))
 
@@ -78,14 +82,28 @@ class QueryPreprocessor:
         return PreparedQuery(variants=variants)
 
     def _expand_variants(self, raw_normalized: str) -> tuple[str, ...]:
-        return (raw_normalized, *self._expansions.get(normalize_query_lookup_key(raw_normalized), ()))
+        return (
+            raw_normalized,
+            *self._expansions.get(normalize_query_lookup_key(raw_normalized), ()),
+        )
 
 
 def _sanitize_fts_query(text: str) -> str | None:
-    fts_text = _FTS5_UNSAFE.sub(" ", text)
-    fts_text = _strip_unbalanced_quotes(fts_text)
-    fts_text = " ".join(fts_text.split())
-    return fts_text if fts_text else None
+    fts_text = _strip_unbalanced_quotes(text)
+    fts_text = _FTS5_STRIP_CHARS.sub(" ", fts_text)
+    tokens = _FTS5_TOKEN_RE.findall(fts_text)
+    if not tokens:
+        return None
+
+    normalized_tokens: list[str] = []
+    for token in tokens:
+        normalized = _normalize_fts_token(token)
+        if normalized is not None:
+            normalized_tokens.append(normalized)
+
+    if not normalized_tokens:
+        return None
+    return " ".join(normalized_tokens)
 
 
 def _strip_unbalanced_quotes(text: str) -> str:
@@ -94,3 +112,27 @@ def _strip_unbalanced_quotes(text: str) -> str:
     if count % 2 != 0:
         return text.replace('"', "")
     return text
+
+
+def _normalize_fts_token(token: str) -> str | None:
+    stripped = token.strip()
+    if not stripped:
+        return None
+
+    if stripped.startswith('"') and stripped.endswith('"') and len(stripped) >= 2:
+        phrase = stripped[1:-1].strip()
+        if not _FTS5_SEARCHABLE_TOKEN_RE.search(phrase):
+            return None
+        escaped_phrase = phrase.replace('"', '""')
+        return f'"{escaped_phrase}"'
+
+    if stripped in _FTS5_OPERATOR_TOKENS:
+        return stripped
+
+    if not _FTS5_SEARCHABLE_TOKEN_RE.search(stripped):
+        return None
+    if _FTS5_BARE_TOKEN_RE.fullmatch(stripped):
+        return stripped
+
+    escaped = stripped.replace('"', '""')
+    return f'"{escaped}"'

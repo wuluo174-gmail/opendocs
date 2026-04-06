@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from opendocs.ui.acceptance_capture import (
+from opendocs.acceptance.s4_capture_harness import (
     capture_s4_tc005_artifacts,
     default_tc005_output_dir,
     planned_tc005_output_paths,

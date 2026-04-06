@@ -11,8 +11,8 @@ from opendocs.utils.path_facts import (
 class TestSearchFilter:
     def test_default_all_none(self) -> None:
         f = SearchFilter()
+        assert f.source_roots is None
         assert f.directory_prefixes is None
-        assert f.source_root_ids is None
         assert f.categories is None
         assert f.tags is None
         assert f.file_types is None
@@ -33,15 +33,27 @@ class TestSearchFilter:
 
     def test_filters_are_normalized_and_deduplicated(self) -> None:
         f = SearchFilter(
+            source_roots=[" Corpus ", "corpus"],
             categories=[" Project ", "project"],
             tags=[" Roadmap ", "ROADMAP", "Alpha"],
             file_types=[" MD ", "md"],
             sensitivity_levels=[" Sensitive ", "sensitive"],
         )
+        assert f.source_roots == ["Corpus", "corpus"]
         assert f.categories == ["project"]
         assert f.tags == ["roadmap", "alpha"]
         assert f.file_types == ["md"]
         assert f.sensitivity_levels == ["sensitive"]
+
+    def test_source_roots_are_normalized_and_deduplicated(self) -> None:
+        f = SearchFilter(source_roots=[" /tmp/corpus/ ", "/tmp/corpus", "corpus"])
+        assert f.source_roots == ["/tmp/corpus", "corpus"]
+
+    def test_directory_prefixes_are_normalized_and_deduplicated(self) -> None:
+        f = SearchFilter(
+            directory_prefixes=[" projects/alpha/ ", "projects\\alpha", "projects/alpha"]
+        )
+        assert f.directory_prefixes == ["projects/alpha"]
 
     def test_directory_prefix_normalization_preserves_root(self) -> None:
         assert normalize_directory_prefix("projects/alpha/") == "projects/alpha"

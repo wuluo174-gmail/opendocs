@@ -135,6 +135,8 @@ def _schema_compatibility_issues(connection: sqlite3.Connection) -> list[str]:
         issues.append("source_roots table is missing")
     else:
         source_root_columns = _table_info_map(connection, "source_roots")
+        if "display_root" not in source_root_columns:
+            issues.append("source_roots.display_root column is missing")
         if "default_category" not in source_root_columns:
             issues.append("source_roots.default_category column is missing")
         if "default_tags_json" not in source_root_columns:
@@ -149,6 +151,8 @@ def _schema_compatibility_issues(connection: sqlite3.Connection) -> list[str]:
         issues.append("documents table is missing")
     else:
         document_columns = _table_info_map(connection, "documents")
+        if "display_path" not in document_columns:
+            issues.append("documents.display_path column is missing")
         hash_column = document_columns.get("hash_sha256")
         if hash_column is None:
             issues.append("documents.hash_sha256 column is missing")
@@ -183,6 +187,16 @@ def _schema_compatibility_issues(connection: sqlite3.Connection) -> list[str]:
             issues.append("documents idx_documents_active_path index is missing")
         elif "where is_deleted_from_fs = 0" not in _normalize_sql(active_path_index_sql):
             issues.append("documents idx_documents_active_path is not scoped to active rows")
+
+        file_identity_index_sql = _index_sql(connection, "idx_documents_file_identity")
+        if file_identity_index_sql is None:
+            issues.append("documents idx_documents_file_identity index is missing")
+        else:
+            normalized_file_identity_index_sql = _normalize_sql(file_identity_index_sql)
+            if "where file_identity is not null and is_deleted_from_fs = 0" not in (
+                normalized_file_identity_index_sql
+            ):
+                issues.append("documents idx_documents_file_identity is not scoped to active rows")
 
     scan_runs_sql = _table_sql(connection, "scan_runs")
     if scan_runs_sql is None:
@@ -226,10 +240,26 @@ def _preflight_pending_migrations(
     applied_versions = _applied_migration_versions(connection)
     issues: list[str] = []
 
+    if pending_versions:
+        source_root_columns = _table_info_map(connection, "source_roots")
+        document_columns = _table_info_map(connection, "documents")
+        if source_root_columns and "display_root" not in source_root_columns:
+            issues.append(
+                "source_roots.display_root is missing and cannot be backfilled safely "
+                "through the remaining dev-only migrations"
+            )
+        if document_columns and "display_path" not in document_columns:
+            issues.append(
+                "documents.display_path is missing and cannot be backfilled safely "
+                "through the remaining dev-only migrations"
+            )
+
     if "0007" in pending_versions and "0006" in applied_versions:
         document_columns = _table_info_map(connection, "documents")
         if "directory_path" not in document_columns:
-            issues.append("documents.directory_path is missing even though migration 0006 is applied")
+            issues.append(
+                "documents.directory_path is missing even though migration 0006 is applied"
+            )
         if "relative_directory_path" not in document_columns:
             issues.append(
                 "documents.relative_directory_path is missing even though migration 0006 is applied"

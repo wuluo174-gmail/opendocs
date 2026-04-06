@@ -10,6 +10,7 @@ CREATE TABLE source_roots (
         AND NOT replace(source_root_id, '-', '') GLOB '*[^0-9a-f]*'
     ),
     path TEXT NOT NULL UNIQUE,
+    display_root TEXT NOT NULL UNIQUE,
     label TEXT,
     exclude_rules_json TEXT NOT NULL DEFAULT '{}',
     recursive INTEGER NOT NULL DEFAULT 1,
@@ -31,6 +32,7 @@ CREATE TABLE documents (
     ),
     path TEXT NOT NULL UNIQUE,
     relative_path TEXT NOT NULL,
+    display_path TEXT NOT NULL,
     source_root_id TEXT NOT NULL CHECK (
         length(source_root_id) = 36
         AND substr(source_root_id, 9, 1) = '-'

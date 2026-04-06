@@ -1,13 +1,15 @@
-"""Watchdog-based file system monitor with debounce."""
+"""Watchdog-based file system monitor with serialized event processing."""
 
 from __future__ import annotations
 
 import logging
 import threading
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from queue import Queue
+from typing import Any, Literal
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
@@ -21,6 +23,17 @@ from opendocs.indexing.scanner import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _WatcherEvent:
+    """Normalized watcher event owned by the runtime event queue."""
+
+    kind: Literal["index", "delete", "stop"]
+    source_root_id: str
+    path: str
+    event_type: str
+    scanned: ScannedFile | None = None
 
 
 class _DebouncedHandler(FileSystemEventHandler):
@@ -165,7 +178,7 @@ class _DebouncedHandler(FileSystemEventHandler):
 
 
 class IndexWatcher:
-    """Monitor source directories and trigger incremental indexing."""
+    """Monitor source directories and trigger serialized incremental indexing."""
 
     def __init__(
         self,
@@ -180,6 +193,8 @@ class IndexWatcher:
         self._registry = registry
         self._debounce = debounce_seconds
         self._observer: Observer | None = None
+        self._worker: threading.Thread | None = None
+        self._event_queue: Queue[_WatcherEvent] = Queue()
         self._handlers: list[_DebouncedHandler] = []
         self._watched_paths: list[str] = []
         self._watched_source_ids: list[str] = []
@@ -199,10 +214,15 @@ class IndexWatcher:
             rules = ExcludeRules.model_validate(source.exclude_rules_json or {})
 
             handler = _DebouncedHandler(
-                callback_index=lambda scanned, et, src=source: self._on_file_changed(
-                    scanned, src, et
+                callback_index=lambda scanned, et, src=source: self._enqueue_file_changed(
+                    scanned,
+                    source_root_id=src.source_root_id,
+                    event_type=et,
                 ),
-                callback_delete=lambda path, src=source: self._on_file_deleted(path, src),
+                callback_delete=lambda path, src=source: self._enqueue_file_deleted(
+                    path,
+                    source_root_id=src.source_root_id,
+                ),
                 registry=self._registry,
                 exclude_rules=rules,
                 source_root_id=source.source_root_id,
@@ -219,6 +239,7 @@ class IndexWatcher:
             logger.info("IndexWatcher skipped: no readable active sources to watch")
             return 0
 
+        self._start_worker()
         self._observer.start()
         logger.info("IndexWatcher started for %d sources", len(self._watched_paths))
         return len(self._watched_paths)
@@ -230,13 +251,19 @@ class IndexWatcher:
             self._observer.stop()
             self._observer.join(timeout=5)
             self._observer = None
+        self._stop_worker()
         self._handlers.clear()
         self._watched_paths.clear()
         self._watched_source_ids.clear()
         logger.info("IndexWatcher stopped")
 
     def is_running(self) -> bool:
-        return self._observer is not None and self._observer.is_alive()
+        return (
+            self._observer is not None
+            and self._observer.is_alive()
+            and self._worker is not None
+            and self._worker.is_alive()
+        )
 
     @property
     def watched_paths(self) -> tuple[str, ...]:
@@ -246,16 +273,83 @@ class IndexWatcher:
     def watched_source_ids(self) -> tuple[str, ...]:
         return tuple(self._watched_source_ids)
 
-    def _on_file_changed(
-        self, scanned: ScannedFile, source: Any, event_type: str = "modified"
+    def _start_worker(self) -> None:
+        if self._worker is not None and self._worker.is_alive():
+            return
+        self._worker = threading.Thread(
+            target=self._drain_events,
+            name="OpenDocsIndexWatcherWorker",
+            daemon=True,
+        )
+        self._worker.start()
+
+    def _stop_worker(self) -> None:
+        if self._worker is None:
+            self._event_queue = Queue()
+            return
+        self._event_queue.put(
+            _WatcherEvent(
+                kind="stop",
+                source_root_id="",
+                path="",
+                event_type="stop",
+            )
+        )
+        self._worker.join(timeout=5)
+        self._worker = None
+        self._event_queue = Queue()
+
+    def _drain_events(self) -> None:
+        while True:
+            event = self._event_queue.get()
+            try:
+                if event.kind == "stop":
+                    return
+                if event.kind == "index":
+                    self._process_file_changed(event)
+                elif event.kind == "delete":
+                    self._process_file_deleted(event)
+            finally:
+                self._event_queue.task_done()
+
+    def _enqueue_file_changed(
+        self,
+        scanned: ScannedFile,
+        *,
+        source_root_id: str,
+        event_type: str,
     ) -> None:
+        self._event_queue.put(
+            _WatcherEvent(
+                kind="index",
+                source_root_id=source_root_id,
+                path=str(scanned.path),
+                event_type=event_type,
+                scanned=scanned,
+            )
+        )
+
+    def _enqueue_file_deleted(self, path_str: str, *, source_root_id: str) -> None:
+        self._event_queue.put(
+            _WatcherEvent(
+                kind="delete",
+                source_root_id=source_root_id,
+                path=str(Path(path_str).resolve()),
+                event_type="deleted",
+            )
+        )
+
+    def _process_file_changed(self, event: _WatcherEvent) -> None:
+        scanned = event.scanned
+        if scanned is None:
+            return
         trace_id = str(uuid.uuid4())
         status = "unknown"
         document_id: str | None = None
         try:
             result = self._builder.index_file(
                 scanned,
-                source_root_id=source.source_root_id,
+                source_root_id=event.source_root_id,
                 trace_id=trace_id,
                 force=False,
             )
@@ -267,19 +361,19 @@ class IndexWatcher:
 
         self._write_watcher_audit(
             path=str(scanned.path),
-            source_root_id=source.source_root_id,
-            event_type=event_type,
+            source_root_id=event.source_root_id,
+            event_type=event.event_type,
             status=status,
             trace_id=trace_id,
             document_id=document_id,
         )
 
-    def _on_file_deleted(self, path_str: str, source: Any) -> None:
+    def _process_file_deleted(self, event: _WatcherEvent) -> None:
         trace_id = str(uuid.uuid4())
         from opendocs.storage.db import session_scope
         from opendocs.storage.repositories import DocumentRepository
 
-        resolved_path = str(Path(path_str).resolve())
+        resolved_path = event.path
         status = "not_found"
         doc = None
         document_id: str | None = None
@@ -301,11 +395,11 @@ class IndexWatcher:
                 status = "success" if removed else "not_found"
         except Exception:
             status = "error"
-            logger.exception("Watcher delete failed for %s", path_str)
+            logger.exception("Watcher delete failed for %s", resolved_path)
 
         self._write_watcher_audit(
             path=resolved_path,
-            source_root_id=source.source_root_id,
+            source_root_id=event.source_root_id,
             event_type="deleted",
             status=status,
             trace_id=trace_id,

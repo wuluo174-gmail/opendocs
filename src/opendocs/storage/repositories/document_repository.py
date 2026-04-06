@@ -32,9 +32,27 @@ class DocumentRepository:
         statement = statement.limit(1)
         return self._session.scalar(statement)
 
-    def get_by_file_identity(self, file_identity: str) -> DocumentModel | None:
+    def get_by_file_identity(
+        self,
+        file_identity: str,
+        *,
+        include_deleted: bool = False,
+    ) -> DocumentModel | None:
         statement = select(DocumentModel).where(DocumentModel.file_identity == file_identity)
+        if not include_deleted:
+            statement = statement.where(DocumentModel.is_deleted_from_fs.is_(False))
+        statement = statement.order_by(DocumentModel.is_deleted_from_fs.asc(), DocumentModel.doc_id)
+        statement = statement.limit(1)
         return self._session.scalar(statement)
+
+    def list_active_by_source_root(self, source_root_id: str) -> list[DocumentModel]:
+        statement = (
+            select(DocumentModel)
+            .where(DocumentModel.source_root_id == source_root_id)
+            .where(DocumentModel.is_deleted_from_fs.is_(False))
+            .order_by(DocumentModel.path.asc())
+        )
+        return list(self._session.scalars(statement))
 
     def list_all(self, *, limit: int | None = None) -> list[DocumentModel]:
         statement = select(DocumentModel).order_by(DocumentModel.path.asc())

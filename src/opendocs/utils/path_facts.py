@@ -1,8 +1,10 @@
-"""Helpers for deriving normalized directory facts from document paths."""
+"""Helpers for deriving normalized source/document path facts."""
 
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
+from pathlib import PurePosixPath
 
 _WINDOWS_DRIVE_ROOT_RE = re.compile(r"^[A-Za-z]:/$")
 
@@ -57,3 +59,47 @@ def derive_directory_facts(path: str, relative_path: str) -> tuple[str, str]:
         directory_path = normalized_path[:last_sep]
 
     return directory_path, relative_directory_path
+
+
+def derive_source_display_root(
+    path: str,
+    *,
+    source_root_id: str,
+    occupied_roots: Collection[str] = (),
+) -> str:
+    """Return a stable, human-readable root label for one source root.
+
+    The display root is owned by the source root itself, not reconstructed by
+    search/UI layers from absolute paths. Basenames stay readable; collisions
+    are disambiguated with the immutable source_root_id prefix.
+    """
+
+    normalized_path = normalize_path_separators(path).strip()
+    if normalized_path == "/":
+        candidate = "root"
+    elif _looks_like_windows_drive_root(normalized_path):
+        candidate = f"{normalized_path[0].lower()}-drive"
+    else:
+        trimmed_path = normalized_path.rstrip("/")
+        candidate = PurePosixPath(trimmed_path).name or "source"
+
+    if candidate not in occupied_roots:
+        return candidate
+    return f"{candidate}__{source_root_id.split('-', 1)[0]}"
+
+
+def build_display_path(display_root: str, relative_path: str) -> str:
+    """Return the human-facing document path shown in search/citation UIs."""
+
+    normalized_root = normalize_path_separators(display_root).strip().strip("/")
+    normalized_relative_path = normalize_path_separators(relative_path).strip().strip("/")
+    if not normalized_root:
+        raise ValueError("display_root must not be empty")
+    if not normalized_relative_path:
+        return normalized_root
+    return f"{normalized_root}/{normalized_relative_path}"
+
+
+def _looks_like_windows_drive_root(path: str) -> bool:
+    candidate = path if path.endswith("/") else f"{path}/"
+    return _WINDOWS_DRIVE_ROOT_RE.fullmatch(candidate) is not None

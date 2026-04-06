@@ -8,15 +8,15 @@ from datetime import datetime
 from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
-from opendocs.utils.path_facts import build_directory_prefix_patterns
+from opendocs.utils.path_facts import build_directory_prefix_patterns, normalize_directory_prefix
 
 
 @dataclass
 class SearchFilter:
     """Six-dimension search filter per spec §8.3."""
 
+    source_roots: list[str] | None = None
     directory_prefixes: list[str] | None = None
-    source_root_ids: list[str] | None = None
     categories: list[str] | None = None
     tags: list[str] | None = None
     file_types: list[str] | None = None
@@ -24,8 +24,8 @@ class SearchFilter:
     sensitivity_levels: list[str] | None = None
 
     def __post_init__(self) -> None:
+        self.source_roots = self._normalize_paths(self.source_roots)
         self.directory_prefixes = self._normalize_paths(self.directory_prefixes)
-        self.source_root_ids = self._normalize_tokens(self.source_root_ids)
         self.categories = self._normalize_tokens(self.categories)
         self.tags = self._normalize_tokens(self.tags)
         self.file_types = self._normalize_tokens(self.file_types)
@@ -49,7 +49,17 @@ class SearchFilter:
     def _normalize_paths(values: list[str] | None) -> list[str] | None:
         if not values:
             return None
-        normalized = [" ".join(value.strip().split()) for value in values if value.strip()]
+        seen: set[str] = set()
+        normalized: list[str] = []
+        for value in values:
+            collapsed = " ".join(value.strip().split())
+            if not collapsed:
+                continue
+            path = normalize_directory_prefix(collapsed)
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            normalized.append(path)
         return normalized or None
 
 
@@ -61,6 +71,23 @@ def apply_pre_filter(session: Session, filters: SearchFilter | None) -> set[str]
     clauses: list[str] = []
     params: dict = {}
     clause_idx = 0
+    from_clause = "documents AS d"
+
+    if filters.source_roots:
+        from_clause = "documents AS d JOIN source_roots AS s ON s.source_root_id = d.source_root_id"
+        root_clauses = []
+        for source_root in filters.source_roots:
+            normalized_root = normalize_directory_prefix(source_root)
+            if not normalized_root:
+                continue
+            path_key = f"root_path_{clause_idx}"
+            label_key = f"root_label_{clause_idx}"
+            params[path_key] = normalized_root
+            params[label_key] = normalized_root
+            root_clauses.append(f"(s.path = :{path_key} OR s.display_root = :{label_key})")
+            clause_idx += 1
+        if root_clauses:
+            clauses.append(f"({' OR '.join(root_clauses)})")
 
     if filters.directory_prefixes:
         directory_clauses = []
@@ -74,24 +101,15 @@ def apply_pre_filter(session: Session, filters: SearchFilter | None) -> set[str]
             params[like_key] = like_pattern
             directory_clauses.append(
                 "("
-                f"directory_path = :{key} OR "
-                f"directory_path LIKE :{like_key} ESCAPE '\\' OR "
-                f"relative_directory_path = :{key} OR "
-                f"relative_directory_path LIKE :{like_key} ESCAPE '\\'"
+                f"d.directory_path = :{key} OR "
+                f"d.directory_path LIKE :{like_key} ESCAPE '\\' OR "
+                f"d.relative_directory_path = :{key} OR "
+                f"d.relative_directory_path LIKE :{like_key} ESCAPE '\\'"
                 ")"
             )
             clause_idx += 1
         if directory_clauses:
             clauses.append(f"({' OR '.join(directory_clauses)})")
-
-    if filters.source_root_ids:
-        phs = []
-        for sid in filters.source_root_ids:
-            key = f"src_{clause_idx}"
-            phs.append(f":{key}")
-            params[key] = sid
-            clause_idx += 1
-        clauses.append(f"source_root_id IN ({', '.join(phs)})")
 
     if filters.categories:
         phs = []
@@ -100,7 +118,7 @@ def apply_pre_filter(session: Session, filters: SearchFilter | None) -> set[str]
             phs.append(f":{key}")
             params[key] = cat
             clause_idx += 1
-        clauses.append(f"category IN ({', '.join(phs)})")
+        clauses.append(f"d.category IN ({', '.join(phs)})")
 
     if filters.file_types:
         phs = []
@@ -109,7 +127,7 @@ def apply_pre_filter(session: Session, filters: SearchFilter | None) -> set[str]
             phs.append(f":{key}")
             params[key] = ft
             clause_idx += 1
-        clauses.append(f"file_type IN ({', '.join(phs)})")
+        clauses.append(f"d.file_type IN ({', '.join(phs)})")
 
     if filters.sensitivity_levels:
         phs = []
@@ -118,19 +136,21 @@ def apply_pre_filter(session: Session, filters: SearchFilter | None) -> set[str]
             phs.append(f":{key}")
             params[key] = sl
             clause_idx += 1
-        clauses.append(f"sensitivity IN ({', '.join(phs)})")
+        clauses.append(f"d.sensitivity IN ({', '.join(phs)})")
 
     if filters.time_range:
         params["time_start"] = filters.time_range[0].strftime("%Y-%m-%d %H:%M:%S")
         params["time_end"] = filters.time_range[1].strftime("%Y-%m-%d %H:%M:%S")
-        clauses.append("modified_at >= :time_start AND modified_at <= :time_end")
+        clauses.append("d.modified_at >= :time_start AND d.modified_at <= :time_end")
 
     if filters.tags:
         tag_clauses = []
         for tag in filters.tags:
             key = f"tag_{clause_idx}"
             params[key] = tag
-            tag_clauses.append(f"EXISTS (SELECT 1 FROM json_each(tags_json) WHERE value = :{key})")
+            tag_clauses.append(
+                f"EXISTS (SELECT 1 FROM json_each(d.tags_json) WHERE value = :{key})"
+            )
             clause_idx += 1
         clauses.append(f"({' OR '.join(tag_clauses)})")
 
@@ -138,6 +158,6 @@ def apply_pre_filter(session: Session, filters: SearchFilter | None) -> set[str]
         return None
 
     where = " AND ".join(clauses)
-    sql = sa_text(f"SELECT doc_id FROM documents WHERE is_deleted_from_fs = 0 AND {where}")
+    sql = sa_text(f"SELECT d.doc_id FROM {from_clause} WHERE d.is_deleted_from_fs = 0 AND {where}")
     rows = session.execute(sql, params).fetchall()
     return {r[0] for r in rows}

@@ -6,10 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from opendocs.acceptance.s4_capture_harness import (
+    capture_s4_tc018_artifacts,
+    planned_tc018_output_paths,
+)
 from opendocs.retrieval.stage_acceptance_capture_cases import load_s4_acceptance_capture_cases
 from opendocs.retrieval.stage_acceptance_corpora import resolve_s4_tc018_corpus_dir
 from opendocs.retrieval.stage_acceptance_provenance import build_s4_tc018_input_provenance
-from opendocs.ui.acceptance_capture import capture_s4_tc018_artifacts, planned_tc018_output_paths
 
 
 class TestTc018ArtifactCapture:
@@ -44,7 +47,9 @@ class TestTc018ArtifactCapture:
     def test_capture_refuses_overwrite_without_force(self, tmp_path: Path) -> None:
         output_dir = tmp_path / "artifacts"
         output_dir.mkdir(parents=True)
-        planned_output = next(path for path in planned_tc018_output_paths(output_dir) if path.suffix == ".png")
+        planned_output = next(
+            path for path in planned_tc018_output_paths(output_dir) if path.suffix == ".png"
+        )
         planned_output.write_bytes(b"already-exists")
 
         with pytest.raises(FileExistsError):

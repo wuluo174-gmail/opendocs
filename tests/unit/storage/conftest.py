@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from opendocs.domain.models import SourceRootModel
 from opendocs.storage.db import build_sqlite_engine, init_db
+from opendocs.utils.path_facts import derive_source_display_root
 from opendocs.utils.time import utcnow_naive
 
 
@@ -40,6 +41,7 @@ def build_source_root(
     return SourceRootModel(
         source_root_id=root_id,
         path=root_path,
+        display_root=derive_source_display_root(root_path, source_root_id=root_id),
         label="test source",
         exclude_rules_json={},
         recursive=True,

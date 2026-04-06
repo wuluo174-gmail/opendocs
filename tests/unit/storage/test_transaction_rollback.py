@@ -11,14 +11,20 @@ from sqlalchemy.orm import Session
 
 from opendocs.domain.models import DocumentModel, SourceRootModel
 from opendocs.storage.db import session_scope
-from opendocs.utils.path_facts import derive_directory_facts
+from opendocs.utils.path_facts import (
+    build_display_path,
+    derive_directory_facts,
+    derive_source_display_root,
+)
 
 
 def _add_source_root(session: Session, *, path: str) -> SourceRootModel:
     now = datetime.now(UTC).replace(tzinfo=None)
+    source_root_id = str(uuid.uuid4())
     source_root = SourceRootModel(
-        source_root_id=str(uuid.uuid4()),
+        source_root_id=source_root_id,
         path=path,
+        display_root=derive_source_display_root(path, source_root_id=source_root_id),
         label="rollback test source",
         exclude_rules_json={},
         recursive=True,
@@ -41,6 +47,7 @@ def _build_document(path: str, *, source_root_id: str) -> DocumentModel:
         doc_id=str(uuid.uuid4()),
         path=path,
         relative_path=path.split("/")[-1],
+        display_path=build_display_path("docs", path.split("/")[-1]),
         directory_path=directory_path,
         relative_directory_path=relative_directory_path,
         source_root_id=source_root_id,

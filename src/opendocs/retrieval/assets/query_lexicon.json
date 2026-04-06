@@ -1,0 +1,29 @@
+{
+  "entries": [
+    {
+      "lexicon_id": "project_progress",
+      "canonical_query": "项目进度",
+      "aliases": ["进展汇报", "项目计划书", "项目进度汇报", "project progress"]
+    },
+    {
+      "lexicon_id": "meeting_notes",
+      "canonical_query": "会议纪要",
+      "aliases": ["讨论记录", "会议记录", "meeting notes"]
+    },
+    {
+      "lexicon_id": "login_system",
+      "canonical_query": "authentication module",
+      "aliases": ["login system", "身份验证模块", "登录系统", "身份认证模块"]
+    },
+    {
+      "lexicon_id": "roadmap",
+      "canonical_query": "Project Plan",
+      "aliases": ["roadmap", "milestones", "项目路线图"]
+    },
+    {
+      "lexicon_id": "nlp",
+      "canonical_query": "自然语言处理",
+      "aliases": ["NLP", "language processing"]
+    }
+  ]
+}

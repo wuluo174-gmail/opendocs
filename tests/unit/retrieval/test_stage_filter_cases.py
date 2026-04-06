@@ -33,19 +33,17 @@ class TestStageFilterCases:
 
     def test_absolute_directory_case_resolves_from_corpus_root(self, tmp_path: Path) -> None:
         case = next(case for case in load_s4_search_filter_cases() if case.case_id == "S4-FC-002")
-        filters = case.build_filter(
-            corpus_dir=tmp_path / "corpus",
-            primary_source_root_id="source-1",
-        )
-        assert filters.directory_prefixes == [str((tmp_path / "corpus" / "projects" / "alpha").resolve())]
+        filters = case.build_filter(corpus_dir=tmp_path / "corpus")
+        assert filters.directory_prefixes == [
+            str((tmp_path / "corpus" / "projects" / "alpha").resolve())
+        ]
 
-    def test_combined_case_includes_primary_source_root_and_time_range(self, tmp_path: Path) -> None:
+    def test_combined_case_includes_source_root_path_and_time_range(self, tmp_path: Path) -> None:
         case = next(case for case in load_s4_search_filter_cases() if case.case_id == "S4-FC-003")
-        filters = case.build_filter(
-            corpus_dir=tmp_path / "corpus",
-            primary_source_root_id="source-1",
-        )
-        assert filters.source_root_ids == ["source-1"]
+        filters = case.build_filter(corpus_dir=tmp_path / "corpus")
+        assert filters.source_roots is not None
+        assert str((tmp_path / "corpus").resolve()) in filters.source_roots
+        assert filters.directory_prefixes is None
         assert filters.categories == ["project"]
         assert filters.tags == ["roadmap", "shared-source"]
         assert filters.sensitivity_levels == ["sensitive"]

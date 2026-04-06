@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from opendocs.retrieval.embedder import LocalNgramEmbedder
+from opendocs.retrieval.embedder import LocalNgramEmbedder, normalize_embedding_text
 
 
 @pytest.fixture()
@@ -22,6 +22,9 @@ class TestDimension:
 
 
 class TestNormalization:
+    def test_normalize_embedding_text_owns_casefolded_dense_semantics(self) -> None:
+        assert normalize_embedding_text(" ＡＩ ") == "ai"
+
     def test_l2_normalized(self, embedder: LocalNgramEmbedder) -> None:
         vec = embedder.embed_text("test document text")
         norm = np.linalg.norm(vec)
@@ -41,6 +44,16 @@ class TestDeterminism:
         v1 = embedder.embed_text("项目进度报告")
         v2 = embedder.embed_text("项目进度报告")
         assert np.allclose(v1, v2)
+
+    def test_case_and_fullwidth_variants_share_the_same_vector(
+        self,
+        embedder: LocalNgramEmbedder,
+    ) -> None:
+        canonical = embedder.embed_text("AI")
+        lowercase = embedder.embed_text("ai")
+        fullwidth = embedder.embed_text("ＡＩ")
+        assert np.allclose(canonical, lowercase)
+        assert np.allclose(canonical, fullwidth)
 
     def test_different_text_different_vector(self, embedder: LocalNgramEmbedder) -> None:
         v1 = embedder.embed_text("项目进度报告")

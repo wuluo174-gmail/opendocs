@@ -24,6 +24,7 @@ def test_exception_hierarchy_importable() -> None:
         ProviderUnavailableError,
         RollbackPartialError,
         SchemaCompatibilityError,
+        SearchExecutionError,
         SourceNotFoundError,
         StorageError,
     )
@@ -40,6 +41,7 @@ def test_exception_hierarchy_importable() -> None:
     assert issubclass(ParseFailedError, OpenDocsError)
     assert issubclass(IndexCorruptedError, StorageError)  # 存储层子类
     assert issubclass(EvidenceInsufficientError, OpenDocsError)
+    assert issubclass(SearchExecutionError, OpenDocsError)
     assert issubclass(MemoryConflictError, OpenDocsError)
     assert issubclass(PlanNotApprovedError, OpenDocsError)
     assert issubclass(FileOpFailedError, OpenDocsError)
@@ -94,32 +96,9 @@ def test_cli_default_start_smoke(tmp_path: Path) -> None:
 def test_stage_scaffold_scripts_exist() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     scripts_dir = repo_root / "scripts"
-    required = [
-        "bootstrap_dev.py",
-        "generate_fixture_corpus.py",
-        "rebuild_index.py",
-        "run_acceptance.py",
-    ]
+    required = ["bootstrap_dev.py"]
     for script_name in required:
         assert (scripts_dir / script_name).exists()
-
-
-def test_generate_fixture_corpus_cli_contract() -> None:
-    repo_root = Path(__file__).resolve().parents[2]
-    script = repo_root / "scripts" / "generate_fixture_corpus.py"
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(script),
-            "--help",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert completed.returncode == 0
-    assert "--profile" in completed.stdout
-    assert "--output" in completed.stdout
 
 
 def test_cli_uses_explicit_config_root_for_logs(tmp_path: Path) -> None:

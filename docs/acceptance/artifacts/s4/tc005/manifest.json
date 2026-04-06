@@ -7,7 +7,7 @@
   "input_provenance": {
     "acceptance_corpus_asset": "src/opendocs/retrieval/assets/s4_acceptance_corpora.json",
     "acceptance_capture_asset": "src/opendocs/retrieval/assets/s4_acceptance_capture_cases.json",
-    "query_lexicon_asset": "src/opendocs/retrieval/assets/stage_query_lexicon.json",
+    "query_lexicon_asset": "src/opendocs/retrieval/assets/query_lexicon.json",
     "golden_queries_asset": "src/opendocs/retrieval/assets/s4_hybrid_search_queries.json",
     "filter_cases_asset": "src/opendocs/retrieval/assets/s4_search_filter_cases.json",
     "corpus_builder": "src/opendocs/retrieval/stage_search_corpus.py",

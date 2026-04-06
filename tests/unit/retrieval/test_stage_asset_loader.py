@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from opendocs.retrieval.query_lexicon import S4_QUERY_LEXICON_ASSET_REF
+from opendocs.retrieval.query_lexicon import RUNTIME_QUERY_LEXICON_ASSET_REF
 from opendocs.retrieval.stage_asset_loader import (
     read_stage_asset_text,
     stage_asset_relative_path,
@@ -16,7 +16,7 @@ from opendocs.retrieval.stage_golden_queries import S4_HYBRID_SEARCH_QUERIES_ASS
 
 class TestStageAssetLoader:
     def test_reads_stage_asset_via_asset_ref(self) -> None:
-        payload = json.loads(read_stage_asset_text(S4_QUERY_LEXICON_ASSET_REF))
+        payload = json.loads(read_stage_asset_text(RUNTIME_QUERY_LEXICON_ASSET_REF))
         assert "entries" in payload
         assert payload["entries"]
 
@@ -30,5 +30,7 @@ class TestStageAssetLoader:
             stage_asset_relative_path("docs/acceptance/acceptance_cases.md")
 
     def test_rejects_parent_path_traversal_within_stage_owner_prefix(self) -> None:
-        with pytest.raises(ValueError, match="retrieval stage asset ref must stay within asset root"):
+        with pytest.raises(
+            ValueError, match="retrieval stage asset ref must stay within asset root"
+        ):
             stage_asset_relative_path("src/opendocs/retrieval/assets/../stage_search_corpus.py")

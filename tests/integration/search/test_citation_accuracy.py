@@ -6,8 +6,10 @@ from pathlib import Path
 
 from sqlalchemy import text
 
+from opendocs.app.index_service import IndexService
 from opendocs.app.search_service import SearchService
-from opendocs.storage.db import session_scope
+from opendocs.app.source_service import SourceService
+from opendocs.storage.db import build_sqlite_engine, init_db, session_scope
 
 
 class TestCitationAccuracy:
@@ -65,6 +67,43 @@ class TestCitationAccuracy:
         normalized_quote = " ".join(r.citation.quote_preview.replace("...", "").split())
         normalized_preview = " ".join(preview.preview_text.split())
         assert normalized_quote in normalized_preview
+
+    def test_citation_path_disambiguates_same_relative_path_across_source_roots(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        db_path = tmp_path / "multi-root.db"
+        hnsw_path = tmp_path / "hnsw" / "multi-root.hnsw"
+        hnsw_path.parent.mkdir(parents=True, exist_ok=True)
+
+        source_root_a = tmp_path / "workspace-a" / "shared-root"
+        source_root_b = tmp_path / "workspace-b" / "shared-root"
+        source_root_a.mkdir(parents=True)
+        source_root_b.mkdir(parents=True)
+        (source_root_a / "report.md").write_text(
+            "# Report\n\nshared needle alpha",
+            encoding="utf-8",
+        )
+        (source_root_b / "report.md").write_text("# Report\n\nshared needle beta", encoding="utf-8")
+
+        init_db(db_path)
+        engine = build_sqlite_engine(db_path)
+        source_service = SourceService(engine)
+        index_service = IndexService(engine, hnsw_path=hnsw_path)
+
+        source_a = source_service.add_source(source_root_a)
+        source_b = source_service.add_source(source_root_b)
+        index_service.full_index_source(source_a.source_root_id)
+        index_service.full_index_source(source_b.source_root_id)
+
+        service = SearchService(engine, hnsw_path=hnsw_path)
+        resp = service.search("shared needle", top_k=10)
+
+        report_paths = [result.path for result in resp.results if result.title == "Report"]
+        assert len(report_paths) >= 2
+        assert len(set(report_paths)) == len(report_paths)
+        assert all(not Path(path).is_absolute() for path in report_paths)
+        assert all(path.endswith("/report.md") for path in report_paths[:2])
 
     def test_locate_evidence_rejects_mismatched_doc_and_chunk(self, indexed_search_env) -> None:
         """EvidenceLocation must not stitch fields from two different documents."""

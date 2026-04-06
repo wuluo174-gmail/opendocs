@@ -24,7 +24,7 @@ from opendocs.indexing.scanner import ScannedFile
 from opendocs.parsers.base import ParsedDocument, ParserRegistry
 from opendocs.storage.db import session_scope
 from opendocs.storage.repositories import ChunkRepository, DocumentRepository
-from opendocs.utils.path_facts import derive_directory_facts
+from opendocs.utils.path_facts import build_display_path, derive_directory_facts
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,69 @@ class IndexBatchResult:
 class DocumentResolution:
     existing: DocumentModel | None
     displaced: DocumentModel | None = None
+
+
+@dataclass(frozen=True)
+class ActiveDocumentSnapshot:
+    doc_id: str
+    path: str
+    file_identity: str | None
+
+
+@dataclass
+class BatchResolutionState:
+    """Resolve the next active document set from one full scan snapshot.
+
+    The source of truth for incremental reconciliation is:
+    1. the previous active document set persisted in SQLite
+    2. the current scan result for this source root
+
+    We snapshot the previous active set once per batch so lineage resolution
+    does not depend on per-file processing order. This prevents path reuse
+    from breaking rename/move reconciliation.
+    """
+
+    previous_by_path: dict[str, ActiveDocumentSnapshot]
+    previous_by_identity: dict[str, ActiveDocumentSnapshot]
+    claimed_doc_ids: set[str] = field(default_factory=set)
+
+    @classmethod
+    def build(cls, active_documents: list[DocumentModel]) -> BatchResolutionState:
+        snapshots = [
+            ActiveDocumentSnapshot(
+                doc_id=document.doc_id,
+                path=document.path,
+                file_identity=document.file_identity,
+            )
+            for document in active_documents
+        ]
+        previous_by_path = {snapshot.path: snapshot for snapshot in snapshots}
+        previous_by_identity = {
+            snapshot.file_identity: snapshot
+            for snapshot in snapshots
+            if snapshot.file_identity is not None
+        }
+        return cls(
+            previous_by_path=previous_by_path,
+            previous_by_identity=previous_by_identity,
+        )
+
+    def claim(self, doc_id: str) -> None:
+        self.claimed_doc_ids.add(doc_id)
+
+    def match_by_path(self, path: str) -> ActiveDocumentSnapshot | None:
+        snapshot = self.previous_by_path.get(path)
+        if snapshot is None or snapshot.doc_id in self.claimed_doc_ids:
+            return None
+        return snapshot
+
+    def match_by_identity(self, file_identity: str | None) -> ActiveDocumentSnapshot | None:
+        if file_identity is None:
+            return None
+        snapshot = self.previous_by_identity.get(file_identity)
+        if snapshot is None or snapshot.doc_id in self.claimed_doc_ids:
+            return None
+        return snapshot
 
 
 def _compute_hash(file_path: Path) -> str:
@@ -105,6 +168,7 @@ class IndexBuilder:
         source_root_id: str,
         trace_id: str,
         force: bool = False,
+        resolution_state: BatchResolutionState | None = None,
     ) -> IndexedFileResult:
         """Index a single file. Three-phase: SQLite txn → JSONL → HNSW."""
         audit_records: list[AuditLogModel] = []
@@ -119,8 +183,14 @@ class IndexBuilder:
             chunk_repo = ChunkRepository(session)
             source = self._require_source_root(session, source_root_id)
             source_defaults = self._source_defaults(source)
-            resolution = self._resolve_existing_document(doc_repo, scanned)
+            resolution = self._resolve_existing_document(
+                doc_repo,
+                scanned,
+                resolution_state=resolution_state,
+            )
             existing = resolution.existing
+            if resolution_state is not None and existing is not None:
+                resolution_state.claim(existing.doc_id)
             doc_id = existing.doc_id if existing else str(uuid.uuid4())
             old_chunk_ids.extend(
                 self._retire_displaced_document(
@@ -163,9 +233,10 @@ class IndexBuilder:
                     scanned,
                     None,
                     parsed,
-                    merge_document_metadata(source_defaults=source_defaults, declared=parsed.metadata),
-                    source_root_id,
-                    source.source_config_rev,
+                    merge_document_metadata(
+                        source_defaults=source_defaults, declared=parsed.metadata
+                    ),
+                    source,
                     doc_id,
                 )
                 audit_records.append(
@@ -234,8 +305,7 @@ class IndexBuilder:
                                 source_defaults=source_defaults,
                                 declared=parsed.metadata,
                             ),
-                            source_root_id,
-                            source.source_config_rev,
+                            source,
                             doc_id,
                         )
                         audit_records.append(
@@ -286,8 +356,7 @@ class IndexBuilder:
                                 source_defaults=source_defaults,
                                 declared=parsed.metadata,
                             ),
-                            source_root_id,
-                            source.source_config_rev,
+                            source,
                             doc_id,
                         )
                         for chunk in chunks:
@@ -373,6 +442,13 @@ class IndexBuilder:
         """Index multiple files. Each file gets its own session (TC-002 isolation)."""
         start = time.monotonic()
         batch = IndexBatchResult(total=len(files))
+        resolution_state: BatchResolutionState | None = None
+
+        with session_scope(self._engine) as session:
+            active_documents = DocumentRepository(session).list_active_by_source_root(
+                source_root_id
+            )
+            resolution_state = BatchResolutionState.build(active_documents)
 
         for f in files:
             try:
@@ -381,6 +457,7 @@ class IndexBuilder:
                     source_root_id=source_root_id,
                     trace_id=trace_id,
                     force=force,
+                    resolution_state=resolution_state,
                 )
                 batch.results.append(r)
                 if r.status == "success":
@@ -495,10 +572,26 @@ class IndexBuilder:
     def _resolve_existing_document(
         doc_repo: DocumentRepository,
         scanned: ScannedFile,
+        *,
+        resolution_state: BatchResolutionState | None = None,
     ) -> DocumentResolution:
+        if resolution_state is not None:
+            return IndexBuilder._resolve_existing_document_from_batch(
+                doc_repo,
+                scanned,
+                resolution_state,
+            )
+
         identity_match = None
         if scanned.file_identity is not None:
-            identity_match = doc_repo.get_by_file_identity(scanned.file_identity)
+            # file_identity belongs to the current active filesystem lineage only.
+            # Historical deleted rows keep their provenance but must not be
+            # resurrected implicitly when the filesystem later reuses the same
+            # inode / identity.
+            identity_match = doc_repo.get_by_file_identity(
+                scanned.file_identity,
+                include_deleted=False,
+            )
 
         path_match = doc_repo.get_by_path(str(scanned.path))
 
@@ -510,6 +603,33 @@ class IndexBuilder:
         displaced = None
         if path_match is not None and (existing is None or path_match.doc_id != existing.doc_id):
             displaced = path_match
+
+        return DocumentResolution(existing=existing, displaced=displaced)
+
+    @staticmethod
+    def _resolve_existing_document_from_batch(
+        doc_repo: DocumentRepository,
+        scanned: ScannedFile,
+        resolution_state: BatchResolutionState,
+    ) -> DocumentResolution:
+        """Resolve against the batch snapshot, not against already-mutated rows."""
+        identity_snapshot = resolution_state.match_by_identity(scanned.file_identity)
+        path_snapshot = resolution_state.match_by_path(str(scanned.path))
+
+        existing_snapshot = identity_snapshot
+        if existing_snapshot is None and path_snapshot is not None:
+            if scanned.file_identity is None or path_snapshot.file_identity is None:
+                existing_snapshot = path_snapshot
+
+        existing = None
+        if existing_snapshot is not None:
+            existing = doc_repo.get_by_id(existing_snapshot.doc_id)
+
+        displaced = None
+        if path_snapshot is not None and (
+            existing_snapshot is None or path_snapshot.doc_id != existing_snapshot.doc_id
+        ):
+            displaced = doc_repo.get_by_id(path_snapshot.doc_id)
 
         return DocumentResolution(existing=existing, displaced=displaced)
 
@@ -586,21 +706,22 @@ class IndexBuilder:
         file_hash: str | None,
         parsed: ParsedDocument,
         metadata: DocumentMetadata,
-        source_root_id: str,
-        source_config_rev: int,
+        source: SourceRootModel,
         doc_id: str,
     ) -> DocumentModel:
         directory_path, relative_directory_path = derive_directory_facts(
             str(scanned.path),
             scanned.relative_path,
         )
+        display_path = build_display_path(source.display_root, scanned.relative_path)
         if existing:
             existing.path = str(scanned.path)
             existing.hash_sha256 = file_hash
             existing.relative_path = scanned.relative_path
+            existing.display_path = display_path
             existing.file_identity = scanned.file_identity
-            existing.source_root_id = source_root_id
-            existing.source_config_rev = source_config_rev
+            existing.source_root_id = source.source_root_id
+            existing.source_config_rev = source.source_config_rev
             existing.title = parsed.title or scanned.path.stem
             existing.file_type = scanned.file_type
             existing.size_bytes = scanned.size_bytes
@@ -621,11 +742,12 @@ class IndexBuilder:
             doc_id=doc_id,
             path=str(scanned.path),
             relative_path=scanned.relative_path,
+            display_path=display_path,
             directory_path=directory_path,
             relative_directory_path=relative_directory_path,
             file_identity=scanned.file_identity,
-            source_root_id=source_root_id,
-            source_config_rev=source_config_rev,
+            source_root_id=source.source_root_id,
+            source_config_rev=source.source_config_rev,
             source_path=str(scanned.path),
             hash_sha256=file_hash,
             title=parsed.title or scanned.path.stem,

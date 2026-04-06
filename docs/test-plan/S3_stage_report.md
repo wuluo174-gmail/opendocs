@@ -2,6 +2,8 @@
 
 ## 1. 新增/修改文件列表
 
+本节只记录当前仓库中仍然存在、且仍由 S3 主链路消费的 owner / 交付物快照。历史迁移前路径和废弃 helper 只能写入后续修复记录，不能继续冒充当前交付物。
+
 ### 新增源码（10）
 - `src/opendocs/app/source_service.py` — 根目录管理（add/scan/list）
 - `src/opendocs/app/index_service.py` — 索引编排（full/incremental/rebuild）+ `index_incremental` 审计
@@ -144,3 +146,25 @@ S4：混合检索与证据定位
 - **修复**：`IndexBuilder.index_file()` 的哈希/读取失败路径不再只留内存结果；现在会把对应文档落成 `parse_status='failed'`，同时清理旧 chunks，并写入失败审计。
 - **修复**：`IndexBuilder._upsert_document()` 统一写入规范化目录事实，确保目录过滤的数据来源固定且可追踪。
 - **测试**：补充集成测试，覆盖“首次全量索引的 scan_run 与 batch audit 关联”“哈希失败文件仍会落库为 failed 文档”两条回归路径。
+
+## 9. 2026-04-02 S3 根因修复
+
+- **修复**：`documents.file_identity` 改为“仅约束 active 行唯一”的部分索引。deleted 文档保留历史 provenance，但不再占用当前文件身份，也不允许被 `file_identity` 误复活。
+- **修复**：`DocumentRepository.get_by_file_identity()` 默认只看 active 文档，配合新增迁移 `src/opendocs/storage/schema/0012_documents_active_file_identity.sql`，把“历史 deleted lineage”和“当前活动 lineage”从数据约束层分开。
+- **修复**：`IndexBuilder.index_batch()` 新增批次级 active snapshot 解析。增量索引现在以前一轮 active 文档集和本轮 scan 为输入统一决算，不再受文件处理顺序影响；“改名后原路径被新文件复用”会稳定保留旧 lineage 并创建新 lineage。
+- **修复**：`SourceService.add_source()` 拒绝与现有 active source root 重叠的目录，避免一个文件被多个 root 静默争抢所有权。
+- **测试**：补充回归覆盖“nested source root 拒绝”“deleted lineage + file_identity reuse 不复活”“path reuse 不打断 rename lineage”，并让 ORM/迁移一致性测试识别部分索引。
+
+## 10. 2026-04-02 S3 并发状态机修复
+
+- **修复**：`IndexWatcher` 不再让多个 debounce timer 线程直接调用 `IndexBuilder`。文件系统事件现在统一先落入 watcher 内部事件队列，再由单个 worker 串行消费；`watchdog` 只负责发“变化信号”，不再直接拥有索引写入权。
+- **修复**：dense HNSW 工件现在增加进程内互斥边界。`ensure_index / add / delete / query / rebuild / repair` 全部通过 `HnswManager` 内部锁串行化，避免 `_label_map / _next_label / vector_store / 索引文件` 在并发增量更新时被交叉写坏。
+- **修复**：S3 的派生工件生命周期被重新收口为统一状态机：`fs_event -> queue -> SQLite source of truth -> HNSW derived update / mark_dirty -> audit`。这样失败恢复仍然走既有 dirty/rebuild 路径，但中途不会再留下两个线程同时推进同一工件状态的非法转移。
+- **测试**：新增 watcher 回归，显式断言突发多文件事件下 `IndexBuilder.index_file()` 的并发度始终为 `1`，把“单写者”约束固化进自动化测试。
+
+## 11. 2026-04-06 S3 交付基线契约补强
+
+- **根因**：阶段报告此前主要靠人工维护，没有自动化约束去证明“当前报告里写的 owner/交付物”和“仓库里真实存在、真实消费的实现”仍然一致；一旦路径迁移或 owner 变更，文档就会先漂移。
+- **修复**：新增 `tests/unit/indexing/test_s3_stage_report_contract.py`，把 S3 的当前 owner 快照、`documents.file_identity` 的 active-only 约束语义、以及 `fs_event -> queue -> SQLite source of truth -> HNSW derived update / mark_dirty -> audit` 状态机描述固化成测试契约。
+- **修复**：阶段报告顶部现在明确声明“只记录当前仓库仍承担 S3 主链路职责的 owner / 交付物快照”，不再允许历史 helper 和旧路径继续混入当前交付口径。
+- **测试**：新增阶段报告契约回归，逐条校验报告中引用的仓库路径真实存在，并且关键状态机描述没有回退成旧口径。

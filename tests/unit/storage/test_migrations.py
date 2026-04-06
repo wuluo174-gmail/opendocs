@@ -11,7 +11,11 @@ from sqlalchemy import Engine
 from opendocs.domain.models import SourceRootModel
 from opendocs.exceptions import SchemaCompatibilityError
 from opendocs.storage.db import build_sqlite_engine, init_db, migrate
-from opendocs.utils.path_facts import derive_directory_facts
+from opendocs.utils.path_facts import (
+    build_display_path,
+    derive_directory_facts,
+    derive_source_display_root,
+)
 from opendocs.utils.time import utcnow_naive
 
 
@@ -35,13 +39,14 @@ def _insert_source_root(
     connection.execute(
         """
         INSERT INTO source_roots (
-            source_root_id, path, label, exclude_rules_json, recursive,
-            is_active, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            source_root_id, path, display_root, label, exclude_rules_json,
+            recursive, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             source_root_id,
             path,
+            derive_source_display_root(path, source_root_id=source_root_id),
             "test source",
             "{}",
             1,
@@ -71,18 +76,26 @@ def _insert_document(
     is_deleted_from_fs: int = 0,
 ) -> None:
     directory_path, relative_directory_path = derive_directory_facts(path, relative_path)
+    display_root_row = connection.execute(
+        "SELECT display_root FROM source_roots WHERE source_root_id = ?",
+        (source_root_id,),
+    ).fetchone()
+    if display_root_row is None:
+        raise AssertionError(f"missing source_root for test helper: {source_root_id}")
     connection.execute(
         """
         INSERT INTO documents (
-            doc_id, path, relative_path, directory_path, relative_directory_path,
-            source_root_id, source_path, hash_sha256, title, file_type, size_bytes,
-            created_at, modified_at, parse_status, sensitivity, is_deleted_from_fs
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            doc_id, path, relative_path, display_path, directory_path,
+            relative_directory_path, source_root_id, source_path, hash_sha256,
+            title, file_type, size_bytes, created_at, modified_at, parse_status,
+            sensitivity, is_deleted_from_fs
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             doc_id,
             path,
             relative_path,
+            build_display_path(display_root_row[0], relative_path),
             directory_path,
             relative_directory_path,
             source_root_id,
@@ -200,6 +213,7 @@ def test_migrate_is_idempotent(db_path: Path) -> None:
         "0009",
         "0010",
         "0011",
+        "0012",
     ]
     assert second_applied == []
 
@@ -225,6 +239,7 @@ def test_migration_version_recorded(db_path: Path) -> None:
             "0009",
             "0010",
             "0011",
+            "0012",
         }
     finally:
         connection.close()
@@ -234,16 +249,19 @@ def test_migration_adds_document_file_identity_column_and_index(db_path: Path) -
     migrate(db_path)
     connection = sqlite3.connect(db_path)
     try:
-        columns = {
-            row[1]
-            for row in connection.execute("PRAGMA table_info(documents)").fetchall()
-        }
-        indexes = {
-            row[1]
-            for row in connection.execute("PRAGMA index_list(documents)").fetchall()
-        }
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(documents)").fetchall()}
+        indexes = {row[1] for row in connection.execute("PRAGMA index_list(documents)").fetchall()}
+        file_identity_index_sql = connection.execute(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type = 'index' AND name = 'idx_documents_file_identity'"
+        ).fetchone()
         assert "file_identity" in columns
         assert "idx_documents_file_identity" in indexes
+        assert file_identity_index_sql is not None
+        assert (
+            "WHERE file_identity IS NOT NULL AND is_deleted_from_fs = 0"
+            in file_identity_index_sql[0]
+        )
     finally:
         connection.close()
 
@@ -260,6 +278,7 @@ def test_migration_adds_source_root_metadata_default_columns(db_path: Path) -> N
         assert "default_tags_json" in columns
         assert "default_sensitivity" in columns
         assert "source_config_rev" in columns
+        assert "display_root" in columns
         assert columns["default_tags_json"]["notnull"] is True
         assert columns["default_tags_json"]["default"] == "'[]'"
         assert columns["source_config_rev"]["notnull"] is True
@@ -276,6 +295,7 @@ def test_migration_adds_document_source_config_rev_column(db_path: Path) -> None
             row[1]: {"notnull": bool(row[3]), "default": row[4]}
             for row in connection.execute("PRAGMA table_info(documents)").fetchall()
         }
+        assert "display_path" in columns
         assert "source_config_rev" in columns
         assert columns["source_config_rev"]["notnull"] is True
         assert columns["source_config_rev"]["default"] == "1"
@@ -302,6 +322,7 @@ def test_migration_scopes_document_path_uniqueness_to_active_rows(db_path: Path)
 
         common_values = (
             "same/path.md",
+            "path-scope-root/same/path.md",
             "/tmp/path-scope-root/same",
             "same",
             "a9a9a9a9-a9a9-4a9a-8a9a-111111111111",
@@ -318,10 +339,11 @@ def test_migration_scopes_document_path_uniqueness_to_active_rows(db_path: Path)
         connection.execute(
             """
             INSERT INTO documents (
-                doc_id, path, relative_path, directory_path, relative_directory_path,
-                source_root_id, source_path, hash_sha256, title, file_type, size_bytes,
-                created_at, modified_at, parse_status, sensitivity, is_deleted_from_fs
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                doc_id, path, relative_path, display_path, directory_path,
+                relative_directory_path, source_root_id, source_path, hash_sha256,
+                title, file_type, size_bytes, created_at, modified_at, parse_status,
+                sensitivity, is_deleted_from_fs
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "11111111-1111-4111-8111-111111111111",
@@ -333,10 +355,11 @@ def test_migration_scopes_document_path_uniqueness_to_active_rows(db_path: Path)
         connection.execute(
             """
             INSERT INTO documents (
-                doc_id, path, relative_path, directory_path, relative_directory_path,
-                source_root_id, source_path, hash_sha256, title, file_type, size_bytes,
-                created_at, modified_at, parse_status, sensitivity, is_deleted_from_fs
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                doc_id, path, relative_path, display_path, directory_path,
+                relative_directory_path, source_root_id, source_path, hash_sha256,
+                title, file_type, size_bytes, created_at, modified_at, parse_status,
+                sensitivity, is_deleted_from_fs
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "22222222-2222-4222-8222-222222222222",
@@ -351,10 +374,11 @@ def test_migration_scopes_document_path_uniqueness_to_active_rows(db_path: Path)
             connection.execute(
                 """
                 INSERT INTO documents (
-                    doc_id, path, relative_path, directory_path, relative_directory_path,
-                    source_root_id, source_path, hash_sha256, title, file_type, size_bytes,
-                    created_at, modified_at, parse_status, sensitivity, is_deleted_from_fs
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    doc_id, path, relative_path, display_path, directory_path,
+                    relative_directory_path, source_root_id, source_path, hash_sha256,
+                    title, file_type, size_bytes, created_at, modified_at, parse_status,
+                    sensitivity, is_deleted_from_fs
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     "33333333-3333-4333-8333-333333333333",
@@ -965,15 +989,16 @@ def test_migration_backfills_directory_facts_for_legacy_documents(
         connection.execute(
             """
             INSERT INTO documents (
-                doc_id, path, relative_path, source_root_id, source_path, hash_sha256,
-                title, file_type, size_bytes, created_at, modified_at, parse_status,
-                sensitivity, is_deleted_from_fs
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                doc_id, path, relative_path, display_path, source_root_id, source_path,
+                hash_sha256, title, file_type, size_bytes, created_at, modified_at,
+                parse_status, sensitivity, is_deleted_from_fs
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "cdcdcdcd-cdcd-4cdc-8cdc-111111111111",
                 "/tmp/legacy-root/projects/alpha/report.md",
                 "projects/alpha/report.md",
+                "legacy-root/projects/alpha/report.md",
                 source_root_id,
                 "/tmp/legacy-root/projects/alpha/report.md",
                 "a" * 64,
@@ -993,7 +1018,7 @@ def test_migration_backfills_directory_facts_for_legacy_documents(
 
     monkeypatch.setattr(db_module, "_list_migration_files", lambda: all_files)
     applied = db_module.migrate(db_path)
-    assert applied == ["0006", "0007", "0008", "0009", "0010", "0011"]
+    assert applied == ["0006", "0007", "0008", "0009", "0010", "0011", "0012"]
 
     connection = sqlite3.connect(db_path)
     try:
@@ -1033,15 +1058,16 @@ def test_migration_repairs_legacy_source_path_to_document_path(
         connection.execute(
             """
             INSERT INTO documents (
-                doc_id, path, relative_path, source_root_id, source_path, hash_sha256,
-                title, file_type, size_bytes, created_at, modified_at, parse_status,
-                sensitivity, is_deleted_from_fs
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                doc_id, path, relative_path, display_path, source_root_id, source_path,
+                hash_sha256, title, file_type, size_bytes, created_at, modified_at,
+                parse_status, sensitivity, is_deleted_from_fs
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "dededede-dede-4ded-8ded-111111111111",
                 "/tmp/legacy-root/report.md",
                 "report.md",
+                "legacy-root/report.md",
                 source_root_id,
                 "/tmp/legacy-root",
                 "b" * 64,
@@ -1061,7 +1087,7 @@ def test_migration_repairs_legacy_source_path_to_document_path(
 
     monkeypatch.setattr(db_module, "_list_migration_files", lambda: all_files)
     applied = db_module.migrate(db_path)
-    assert applied == ["0007", "0008", "0009", "0010", "0011"]
+    assert applied == ["0007", "0008", "0009", "0010", "0011", "0012"]
 
     connection = sqlite3.connect(db_path)
     try:
@@ -1097,6 +1123,7 @@ def test_chunk_fts_triggers_sync_via_orm(engine: Engine) -> None:
             SourceRootModel(
                 source_root_id=source_root_id,
                 path="/tmp",
+                display_root="tmp",
                 label="fts orm",
                 exclude_rules_json={},
                 recursive=True,
@@ -1110,6 +1137,7 @@ def test_chunk_fts_triggers_sync_via_orm(engine: Engine) -> None:
             doc_id=doc_id,
             path="/tmp/fts_orm.md",
             relative_path="fts_orm.md",
+            display_path="tmp/fts_orm.md",
             directory_path=derive_directory_facts("/tmp/fts_orm.md", "fts_orm.md")[0],
             relative_directory_path=derive_directory_facts("/tmp/fts_orm.md", "fts_orm.md")[1],
             source_root_id=source_root_id,

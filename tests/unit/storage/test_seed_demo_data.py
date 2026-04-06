@@ -21,14 +21,20 @@ from opendocs.domain.models import (
     SourceRootModel,
 )
 from opendocs.storage.db import build_sqlite_engine, init_db
-from opendocs.utils.path_facts import derive_directory_facts
+from opendocs.utils.path_facts import (
+    build_display_path,
+    derive_directory_facts,
+    derive_source_display_root,
+)
 
 
 def _add_source_root(session: Session, *, path: str) -> SourceRootModel:
     now = datetime.now(UTC).replace(tzinfo=None)
+    source_root_id = str(uuid.uuid4())
     source_root = SourceRootModel(
-        source_root_id=str(uuid.uuid4()),
+        source_root_id=source_root_id,
         path=path,
+        display_root=derive_source_display_root(path, source_root_id=source_root_id),
         label="seed test source",
         exclude_rules_json={},
         recursive=True,
@@ -103,8 +109,10 @@ def test_seed_demo_data_inserts_records(db_path: Path) -> None:
             assert document.source_root_id == source_root.source_root_id
             assert document.source_path == document.path
             assert source_root.path == str(Path(document.path).parent)
+            assert source_root.display_root == "demo"
             assert document.directory_path == str(Path(document.path).parent).replace("\\", "/")
-            assert document.relative_directory_path == "demo"
+            assert document.relative_directory_path == ""
+            assert document.display_path == "demo/project_overview.md"
     finally:
         engine.dispose()
 
@@ -151,6 +159,10 @@ def test_seed_demo_data_handles_existing_business_keys(db_path: Path) -> None:
                     doc_id=existing_doc_id,
                     path=demo_doc_path,
                     relative_path=demo_doc_relative_path,
+                    display_path=build_display_path(
+                        source_root.display_root,
+                        demo_doc_relative_path,
+                    ),
                     directory_path=directory_path,
                     relative_directory_path=relative_directory_path,
                     source_root_id=source_root.source_root_id,

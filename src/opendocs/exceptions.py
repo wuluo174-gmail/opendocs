@@ -32,6 +32,10 @@ class SourceNotFoundError(OpenDocsError):
     """E_SOURCE_NOT_FOUND — 根目录不存在或不可读。"""
 
 
+class SourceOverlapError(OpenDocsError):
+    """E_SOURCE_OVERLAP — 根目录与现有活动来源发生所有权重叠。"""
+
+
 class ParseUnsupportedError(OpenDocsError):
     """E_PARSE_UNSUPPORTED — 文件格式不支持解析。"""
 
@@ -46,6 +50,14 @@ class IndexCorruptedError(StorageError):
 
 class EvidenceInsufficientError(OpenDocsError):
     """E_EVIDENCE_INSUFFICIENT — 证据不足，拒绝给出事实性回答。"""
+
+
+class SearchExecutionError(OpenDocsError):
+    """E_SEARCH_EXECUTION_FAILED — 搜索后端失败，调用方只能消费受控错误。"""
+
+    def __init__(self, message: str, *, trace_id: str | None = None) -> None:
+        super().__init__(message)
+        self.trace_id = trace_id
 
 
 class MemoryConflictError(OpenDocsError):

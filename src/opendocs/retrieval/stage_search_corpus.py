@@ -15,6 +15,7 @@ from opendocs.parsers import create_default_registry
 S4_SEARCH_CORPUS_BUILDER_REF = "src/opendocs/retrieval/stage_search_corpus.py"
 S4_SEARCH_SOURCE_DEFAULTS_REF = "src/opendocs/retrieval/stage_search_corpus.py#source_defaults"
 
+
 @dataclass(frozen=True)
 class StageSearchDocumentSpec:
     relative_path: str
@@ -129,7 +130,9 @@ _CORPUS_SPECS: tuple[StageSearchDocumentSpec, ...] = (
     ),
 )
 
-S4_SEARCH_CORPUS_DOCUMENT_PATHS: tuple[str, ...] = tuple(spec.relative_path for spec in _CORPUS_SPECS)
+S4_SEARCH_CORPUS_DOCUMENT_PATHS: tuple[str, ...] = tuple(
+    spec.relative_path for spec in _CORPUS_SPECS
+)
 _S4_SEARCH_SOURCE_DEFAULTS = DocumentMetadata(
     category="workspace",
     tags=["shared-source"],
@@ -147,12 +150,20 @@ def build_s4_search_source_defaults() -> DocumentMetadata:
     return DocumentMetadata.model_validate(_S4_SEARCH_SOURCE_DEFAULTS.model_dump())
 
 
-@lru_cache(maxsize=1)
 def build_s4_search_document_profiles() -> dict[str, StageSearchDocumentProfile]:
     """Return effective per-document search profiles for the stage corpus."""
+    return {
+        profile.relative_path: _clone_search_document_profile(profile)
+        for profile in _load_s4_search_document_profiles()
+    }
+
+
+@lru_cache(maxsize=1)
+def _load_s4_search_document_profiles() -> tuple[StageSearchDocumentProfile, ...]:
+    """Build the canonical stage profiles once and keep the cache private."""
     source_defaults = build_s4_search_source_defaults()
     registry = create_default_registry()
-    profiles: dict[str, StageSearchDocumentProfile] = {}
+    profiles: list[StageSearchDocumentProfile] = []
     with TemporaryDirectory(prefix="opendocs-s4-search-corpus-") as temp_dir:
         corpus_dir = materialize_s4_search_corpus(Path(temp_dir))
         for spec in _CORPUS_SPECS:
@@ -160,17 +171,31 @@ def build_s4_search_document_profiles() -> dict[str, StageSearchDocumentProfile]
             parsed = registry.parse(file_path)
             if parsed.parse_status == "failed":
                 raise ValueError(f"S4 search corpus document failed to parse: {spec.relative_path}")
-            profiles[spec.relative_path] = StageSearchDocumentProfile(
-                relative_path=spec.relative_path,
-                relative_directory=spec.relative_directory,
-                file_type=parsed.file_type,
-                metadata=merge_document_metadata(
-                    source_defaults=source_defaults,
-                    declared=parsed.metadata,
-                ),
-                modified_at=spec.modified_at,
+            profiles.append(
+                StageSearchDocumentProfile(
+                    relative_path=spec.relative_path,
+                    relative_directory=spec.relative_directory,
+                    file_type=parsed.file_type,
+                    metadata=merge_document_metadata(
+                        source_defaults=source_defaults,
+                        declared=parsed.metadata,
+                    ),
+                    modified_at=spec.modified_at,
+                )
             )
-    return profiles
+    return tuple(profiles)
+
+
+def _clone_search_document_profile(
+    profile: StageSearchDocumentProfile,
+) -> StageSearchDocumentProfile:
+    return StageSearchDocumentProfile(
+        relative_path=profile.relative_path,
+        relative_directory=profile.relative_directory,
+        file_type=profile.file_type,
+        metadata=DocumentMetadata.model_validate(profile.metadata.model_dump()),
+        modified_at=profile.modified_at,
+    )
 
 
 def materialize_s4_search_corpus(target_dir: Path) -> Path:

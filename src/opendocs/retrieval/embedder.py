@@ -10,6 +10,8 @@ import hashlib
 
 import numpy as np
 
+from opendocs.parsers.normalization import normalize_text
+
 
 def _is_cjk(ch: str) -> bool:
     """Check if a character is CJK. Ranges mirror chunker.py:28-33."""
@@ -29,8 +31,11 @@ class LocalNgramEmbedder:
     Hashes into fixed-dim buckets, L2-normalized.
     """
 
-    MODEL_NAME = "local-ngram-hash-v1"
-    MODEL_FINGERPRINT = "local-ngram-hash-v1|cjk=1,2|latin=2,3|hash=md5|norm=l2"
+    MODEL_NAME = "local-ngram-hash-v2"
+    MODEL_FINGERPRINT = (
+        "local-ngram-hash-v2|cjk=1,2|latin=2,3|hash=md5|"
+        "text=normalize_text+casefold+strip|norm=l2"
+    )
     DIM = 128
 
     def __init__(self, dim: int | None = None) -> None:
@@ -47,10 +52,11 @@ class LocalNgramEmbedder:
     def embed_text(self, text: str) -> np.ndarray:
         """Embed a single text string. Returns (dim,) float32, L2-normalized."""
         vec = np.zeros(self._dim, dtype=np.float32)
-        if not text or not text.strip():
+        normalized = normalize_embedding_text(text)
+        if not normalized:
             return vec
 
-        ngrams = self._extract_ngrams(text)
+        ngrams = self._extract_ngrams(normalized)
         for ng in ngrams:
             bucket = self._hash_to_bucket(ng)
             vec[bucket] += 1.0
@@ -87,3 +93,8 @@ class LocalNgramEmbedder:
         """Hash an n-gram to a bucket index in [0, dim)."""
         h = hashlib.md5(ngram.encode("utf-8"), usedforsecurity=False).digest()
         return int.from_bytes(h[:4], "little") % self._dim
+
+
+def normalize_embedding_text(text: str) -> str:
+    """Canonicalize dense text so queries and indexed chunks share one owner."""
+    return normalize_text(text).casefold().strip()

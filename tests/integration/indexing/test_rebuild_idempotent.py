@@ -19,6 +19,7 @@ from opendocs.indexing.scanner import Scanner
 from opendocs.parsers import create_default_registry
 from opendocs.retrieval.embedder import LocalNgramEmbedder
 from opendocs.storage.db import session_scope
+from opendocs.utils.path_facts import derive_source_display_root
 from opendocs.utils.time import utcnow_naive
 
 
@@ -239,6 +240,10 @@ class TestRebuildIdempotent:
                 SourceRootModel(
                     source_root_id=source_root_id,
                     path=str(corpus_copy),
+                    display_root=derive_source_display_root(
+                        str(corpus_copy),
+                        source_root_id=source_root_id,
+                    ),
                     label="rebuild fixture",
                     exclude_rules_json={},
                     recursive=True,

@@ -13,15 +13,15 @@
       "top_k": 10,
       "result_count": 6,
       "total_candidates": 6,
-      "trace_id": "aa47b5b4-bd6f-4ba5-98f6-ee681ad37fa8",
-      "duration_sec": 0.005,
+      "trace_id": "a31fb3b8-5907-4f32-8d6a-c0bc8e348743",
+      "duration_sec": 0.003,
       "hit_in_top10": true,
       "results": [
         {
           "title": "会议纪要",
           "path": "zh_meeting_notes.md",
           "summary": "会议纪要 讨论了项目进度和下一步计划。 报告由团队负责人汇总。 下次会议定于周四下午两点。",
-          "modified_at": "2026-03-22T18:07:30.119697",
+          "modified_at": "2026-03-23T16:50:05.818759",
           "score": 0.7746692001819611,
           "score_breakdown": {
             "lexical_raw": -0.7688474897057251,
@@ -32,8 +32,8 @@
             "hybrid_score": 0.7746692001819611
           },
           "citation": {
-            "doc_id": "1a7260ce-9d6b-4b34-8b95-bfd863ad8870",
-            "chunk_id": "1f91987b-92dc-4c83-9881-bbdc32ba3d2d",
+            "doc_id": "400fd709-fd3a-4511-8070-0d59af3018e0",
+            "chunk_id": "884b6357-0d8e-4d6b-a3e7-6f2c123121db",
             "path": "zh_meeting_notes.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -46,18 +46,18 @@
           "path": "zh_project_plan.md",
           "summary": "项目计划书 本项目的目标是开发一个文档管理工具。 项目进度报告将每周更新。 第一阶段完成基础架构搭建。",
           "modified_at": "2026-03-10T12:00:00",
-          "score": 0.26967072848756507,
+          "score": 0.2680341900775413,
           "score_breakdown": {
             "lexical_raw": -0.7452354909697388,
             "lexical_normalized": 0.0,
             "dense_raw": 0.44670581817626953,
             "dense_normalized": 0.5532941818237305,
-            "freshness_boost": 0.7601776484925943,
-            "hybrid_score": 0.26967072848756507
+            "freshness_boost": 0.7438122643923567,
+            "hybrid_score": 0.2680341900775413
           },
           "citation": {
-            "doc_id": "19b39c59-7fef-410a-ab56-83e697830397",
-            "chunk_id": "058bdb62-9200-4eec-9164-d4c7b24e49c2",
+            "doc_id": "d6aad398-b1c0-43bd-ad9d-073629488d14",
+            "chunk_id": "07fed3df-9cdb-4062-bd68-6eeeff3a5b24",
             "path": "zh_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -69,7 +69,7 @@
           "title": "Alpha Directory Note",
           "path": "projects/alpha/alpha_directory_note.md",
           "summary": "Alpha Directory Note 目录过滤专项样本只应该在 alpha 目录命中。 This note exists to validate directory-prefix filtering.",
-          "modified_at": "2026-03-22T18:07:30.120134",
+          "modified_at": "2026-03-23T16:50:05.819141",
           "score": 0.16176342964172363,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -80,8 +80,8 @@
             "hybrid_score": 0.16176342964172363
           },
           "citation": {
-            "doc_id": "931bec08-b8a0-4d68-80cb-99871d8a6dbf",
-            "chunk_id": "8160dcc6-0b34-49bc-be1a-cef8fdb1f321",
+            "doc_id": "5ff16fd5-ca5f-426c-96f0-2b4f89a0698b",
+            "chunk_id": "6819dae3-1e09-4391-a4db-23a819868c49",
             "path": "projects/alpha/alpha_directory_note.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -93,7 +93,7 @@
           "title": "AI 技术报告",
           "path": "mixed_tech_report.md",
           "summary": "AI 技术报告 AI and machine learning 在文档分类中的应用。 DB schema 设计需要考虑可扩展性。 本报告涵盖自然语言处理的最新进展。",
-          "modified_at": "2026-03-22T18:07:30.119786",
+          "modified_at": "2026-03-23T16:50:05.818838",
           "score": 0.15289821922779084,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -104,8 +104,8 @@
             "hybrid_score": 0.15289821922779084
           },
           "citation": {
-            "doc_id": "03a37d7b-adb1-48ef-9a22-112e2ff9521f",
-            "chunk_id": "caa694c0-6a5f-4b8a-8d85-79a7bfeac6dc",
+            "doc_id": "82ccdd41-7f25-4190-9a43-a89af8ba5e2d",
+            "chunk_id": "8f69da06-b750-4757-bfb2-a26f5a7b611c",
             "path": "mixed_tech_report.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -117,7 +117,7 @@
           "title": "Project Plan",
           "path": "en_project_plan.md",
           "summary": "Project Plan Implementation schedule and milestones for the document management system. Phase 1: Foundation setup and architecture design. Phase 2: Core feature development.",
-          "modified_at": "2026-03-22T18:07:30.119879",
+          "modified_at": "2026-03-23T16:50:05.818910",
           "score": 0.1452300488948822,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -128,8 +128,8 @@
             "hybrid_score": 0.1452300488948822
           },
           "citation": {
-            "doc_id": "59a26f2c-98fc-4318-989a-a6742964272d",
-            "chunk_id": "d02e05ab-a7eb-4ae6-af0f-19b60af7e5ef",
+            "doc_id": "1b2cc51d-a4a6-4927-b858-c43d5147d49c",
+            "chunk_id": "c739a3f1-437c-4202-9355-fef7ad012b7d",
             "path": "en_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -141,7 +141,7 @@
           "title": "Weekly Status Report",
           "path": "en_weekly_report.txt",
           "summary": "Weekly Status Report Completed authentication module review and testing. Next steps include integrating the identity provider. Performance benchmarks show improvement.",
-          "modified_at": "2026-03-22T18:07:30.119967",
+          "modified_at": "2026-03-23T16:50:05.818984",
           "score": 0.13831663131713867,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -152,8 +152,8 @@
             "hybrid_score": 0.13831663131713867
           },
           "citation": {
-            "doc_id": "03bad2d3-e084-42c7-a2b5-32d93a5b800c",
-            "chunk_id": "76537f3e-127e-4e6d-9553-bcd86d0a317d",
+            "doc_id": "2a5cd4a3-56d2-42d2-a674-3b3b5ed97ce8",
+            "chunk_id": "a90c7c33-9ff1-48e5-bfc7-5dd5ceda50a7",
             "path": "en_weekly_report.txt",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -173,15 +173,15 @@
       "top_k": 10,
       "result_count": 6,
       "total_candidates": 6,
-      "trace_id": "42d63b78-5774-4a64-8615-5c1e22eacfb3",
-      "duration_sec": 0.003,
+      "trace_id": "809b69d4-3863-4493-a4a3-16806e3cdacc",
+      "duration_sec": 0.002,
       "hit_in_top10": true,
       "results": [
         {
           "title": "会议纪要",
           "path": "zh_meeting_notes.md",
           "summary": "会议纪要 讨论了项目进度和下一步计划。 报告由团队负责人汇总。 下次会议定于周四下午两点。",
-          "modified_at": "2026-03-22T18:07:30.119697",
+          "modified_at": "2026-03-23T16:50:05.818759",
           "score": 0.8022355437278748,
           "score_breakdown": {
             "lexical_raw": -1.6995119495136293,
@@ -192,8 +192,8 @@
             "hybrid_score": 0.8022355437278748
           },
           "citation": {
-            "doc_id": "1a7260ce-9d6b-4b34-8b95-bfd863ad8870",
-            "chunk_id": "1f91987b-92dc-4c83-9881-bbdc32ba3d2d",
+            "doc_id": "400fd709-fd3a-4511-8070-0d59af3018e0",
+            "chunk_id": "884b6357-0d8e-4d6b-a3e7-6f2c123121db",
             "path": "zh_meeting_notes.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -205,7 +205,7 @@
           "title": "Project Plan",
           "path": "en_project_plan.md",
           "summary": "Project Plan Implementation schedule and milestones for the document management system. Phase 1: Foundation setup and architecture design. Phase 2: Core feature development.",
-          "modified_at": "2026-03-22T18:07:30.119879",
+          "modified_at": "2026-03-23T16:50:05.818910",
           "score": 0.17521955370903014,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -216,8 +216,8 @@
             "hybrid_score": 0.17521955370903014
           },
           "citation": {
-            "doc_id": "59a26f2c-98fc-4318-989a-a6742964272d",
-            "chunk_id": "d02e05ab-a7eb-4ae6-af0f-19b60af7e5ef",
+            "doc_id": "1b2cc51d-a4a6-4927-b858-c43d5147d49c",
+            "chunk_id": "c739a3f1-437c-4202-9355-fef7ad012b7d",
             "path": "en_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -229,7 +229,7 @@
           "title": "Alpha Directory Note",
           "path": "projects/alpha/alpha_directory_note.md",
           "summary": "Alpha Directory Note 目录过滤专项样本只应该在 alpha 目录命中。 This note exists to validate directory-prefix filtering.",
-          "modified_at": "2026-03-22T18:07:30.120134",
+          "modified_at": "2026-03-23T16:50:05.819141",
           "score": 0.1592588245868683,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -240,8 +240,8 @@
             "hybrid_score": 0.1592588245868683
           },
           "citation": {
-            "doc_id": "931bec08-b8a0-4d68-80cb-99871d8a6dbf",
-            "chunk_id": "8160dcc6-0b34-49bc-be1a-cef8fdb1f321",
+            "doc_id": "5ff16fd5-ca5f-426c-96f0-2b4f89a0698b",
+            "chunk_id": "6819dae3-1e09-4391-a4db-23a819868c49",
             "path": "projects/alpha/alpha_directory_note.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -253,7 +253,7 @@
           "title": "Weekly Status Report",
           "path": "en_weekly_report.txt",
           "summary": "Weekly Status Report Completed authentication module review and testing. Next steps include integrating the identity provider. Performance benchmarks show improvement.",
-          "modified_at": "2026-03-22T18:07:30.119967",
+          "modified_at": "2026-03-23T16:50:05.818984",
           "score": 0.15792931318283082,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -264,8 +264,8 @@
             "hybrid_score": 0.15792931318283082
           },
           "citation": {
-            "doc_id": "03bad2d3-e084-42c7-a2b5-32d93a5b800c",
-            "chunk_id": "76537f3e-127e-4e6d-9553-bcd86d0a317d",
+            "doc_id": "2a5cd4a3-56d2-42d2-a674-3b3b5ed97ce8",
+            "chunk_id": "a90c7c33-9ff1-48e5-bfc7-5dd5ceda50a7",
             "path": "en_weekly_report.txt",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -277,7 +277,7 @@
           "title": "AI 技术报告",
           "path": "mixed_tech_report.md",
           "summary": "AI 技术报告 AI and machine learning 在文档分类中的应用。 DB schema 设计需要考虑可扩展性。 本报告涵盖自然语言处理的最新进展。",
-          "modified_at": "2026-03-22T18:07:30.119786",
+          "modified_at": "2026-03-23T16:50:05.818838",
           "score": 0.13998729288578032,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -288,8 +288,8 @@
             "hybrid_score": 0.13998729288578032
           },
           "citation": {
-            "doc_id": "03a37d7b-adb1-48ef-9a22-112e2ff9521f",
-            "chunk_id": "caa694c0-6a5f-4b8a-8d85-79a7bfeac6dc",
+            "doc_id": "82ccdd41-7f25-4190-9a43-a89af8ba5e2d",
+            "chunk_id": "8f69da06-b750-4757-bfb2-a26f5a7b611c",
             "path": "mixed_tech_report.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -302,18 +302,18 @@
           "path": "zh_project_plan.md",
           "summary": "项目计划书 本项目的目标是开发一个文档管理工具。 项目进度报告将每周更新。 第一阶段完成基础架构搭建。",
           "modified_at": "2026-03-10T12:00:00",
-          "score": 0.11420590941388803,
+          "score": 0.11256937100386427,
           "score_breakdown": {
             "lexical_raw": 0.0,
             "lexical_normalized": 0.0,
             "dense_raw": 0.8908910155296326,
             "dense_normalized": 0.10910898447036743,
-            "freshness_boost": 0.7601776484925943,
-            "hybrid_score": 0.11420590941388803
+            "freshness_boost": 0.7438122643923567,
+            "hybrid_score": 0.11256937100386427
           },
           "citation": {
-            "doc_id": "19b39c59-7fef-410a-ab56-83e697830397",
-            "chunk_id": "058bdb62-9200-4eec-9164-d4c7b24e49c2",
+            "doc_id": "d6aad398-b1c0-43bd-ad9d-073629488d14",
+            "chunk_id": "07fed3df-9cdb-4062-bd68-6eeeff3a5b24",
             "path": "zh_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -333,15 +333,15 @@
       "top_k": 10,
       "result_count": 6,
       "total_candidates": 6,
-      "trace_id": "9c8e434e-ef43-44e3-a858-80278cf6c33a",
-      "duration_sec": 0.003,
+      "trace_id": "80a8eac4-8585-4409-8d6a-274e6ef39f16",
+      "duration_sec": 0.002,
       "hit_in_top10": true,
       "results": [
         {
           "title": "会议纪要",
           "path": "zh_meeting_notes.md",
           "summary": "会议纪要 讨论了项目进度和下一步计划。 报告由团队负责人汇总。 下次会议定于周四下午两点。",
-          "modified_at": "2026-03-22T18:07:30.119697",
+          "modified_at": "2026-03-23T16:50:05.818759",
           "score": 0.8148141235113144,
           "score_breakdown": {
             "lexical_raw": -1.6995119495136293,
@@ -352,8 +352,8 @@
             "hybrid_score": 0.8148141235113144
           },
           "citation": {
-            "doc_id": "1a7260ce-9d6b-4b34-8b95-bfd863ad8870",
-            "chunk_id": "1f91987b-92dc-4c83-9881-bbdc32ba3d2d",
+            "doc_id": "400fd709-fd3a-4511-8070-0d59af3018e0",
+            "chunk_id": "884b6357-0d8e-4d6b-a3e7-6f2c123121db",
             "path": "zh_meeting_notes.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -365,7 +365,7 @@
           "title": "Project Plan",
           "path": "en_project_plan.md",
           "summary": "Project Plan Implementation schedule and milestones for the document management system. Phase 1: Foundation setup and architecture design. Phase 2: Core feature development.",
-          "modified_at": "2026-03-22T18:07:30.119879",
+          "modified_at": "2026-03-23T16:50:05.818910",
           "score": 0.18727920055389405,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -376,8 +376,8 @@
             "hybrid_score": 0.18727920055389405
           },
           "citation": {
-            "doc_id": "59a26f2c-98fc-4318-989a-a6742964272d",
-            "chunk_id": "d02e05ab-a7eb-4ae6-af0f-19b60af7e5ef",
+            "doc_id": "1b2cc51d-a4a6-4927-b858-c43d5147d49c",
+            "chunk_id": "c739a3f1-437c-4202-9355-fef7ad012b7d",
             "path": "en_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -389,7 +389,7 @@
           "title": "AI 技术报告",
           "path": "mixed_tech_report.md",
           "summary": "AI 技术报告 AI and machine learning 在文档分类中的应用。 DB schema 设计需要考虑可扩展性。 本报告涵盖自然语言处理的最新进展。",
-          "modified_at": "2026-03-22T18:07:30.119786",
+          "modified_at": "2026-03-23T16:50:05.818838",
           "score": 0.17974706888198852,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -400,8 +400,8 @@
             "hybrid_score": 0.17974706888198852
           },
           "citation": {
-            "doc_id": "03a37d7b-adb1-48ef-9a22-112e2ff9521f",
-            "chunk_id": "caa694c0-6a5f-4b8a-8d85-79a7bfeac6dc",
+            "doc_id": "82ccdd41-7f25-4190-9a43-a89af8ba5e2d",
+            "chunk_id": "8f69da06-b750-4757-bfb2-a26f5a7b611c",
             "path": "mixed_tech_report.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -413,7 +413,7 @@
           "title": "Alpha Directory Note",
           "path": "projects/alpha/alpha_directory_note.md",
           "summary": "Alpha Directory Note 目录过滤专项样本只应该在 alpha 目录命中。 This note exists to validate directory-prefix filtering.",
-          "modified_at": "2026-03-22T18:07:30.120134",
+          "modified_at": "2026-03-23T16:50:05.819141",
           "score": 0.17305701673030854,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -424,8 +424,8 @@
             "hybrid_score": 0.17305701673030854
           },
           "citation": {
-            "doc_id": "931bec08-b8a0-4d68-80cb-99871d8a6dbf",
-            "chunk_id": "8160dcc6-0b34-49bc-be1a-cef8fdb1f321",
+            "doc_id": "5ff16fd5-ca5f-426c-96f0-2b4f89a0698b",
+            "chunk_id": "6819dae3-1e09-4391-a4db-23a819868c49",
             "path": "projects/alpha/alpha_directory_note.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -437,7 +437,7 @@
           "title": "Weekly Status Report",
           "path": "en_weekly_report.txt",
           "summary": "Weekly Status Report Completed authentication module review and testing. Next steps include integrating the identity provider. Performance benchmarks show improvement.",
-          "modified_at": "2026-03-22T18:07:30.119967",
+          "modified_at": "2026-03-23T16:50:05.818984",
           "score": 0.16065273582935333,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -448,8 +448,8 @@
             "hybrid_score": 0.16065273582935333
           },
           "citation": {
-            "doc_id": "03bad2d3-e084-42c7-a2b5-32d93a5b800c",
-            "chunk_id": "76537f3e-127e-4e6d-9553-bcd86d0a317d",
+            "doc_id": "2a5cd4a3-56d2-42d2-a674-3b3b5ed97ce8",
+            "chunk_id": "a90c7c33-9ff1-48e5-bfc7-5dd5ceda50a7",
             "path": "en_weekly_report.txt",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -462,18 +462,18 @@
           "path": "zh_project_plan.md",
           "summary": "项目计划书 本项目的目标是开发一个文档管理工具。 项目进度报告将每周更新。 第一阶段完成基础架构搭建。",
           "modified_at": "2026-03-10T12:00:00",
-          "score": 0.15979267124612528,
+          "score": 0.15815613283610153,
           "score_breakdown": {
             "lexical_raw": 0.0,
             "lexical_normalized": 0.0,
             "dense_raw": 0.7606431245803833,
             "dense_normalized": 0.2393568754196167,
-            "freshness_boost": 0.7601776484925943,
-            "hybrid_score": 0.15979267124612528
+            "freshness_boost": 0.7438122643923567,
+            "hybrid_score": 0.15815613283610153
           },
           "citation": {
-            "doc_id": "19b39c59-7fef-410a-ab56-83e697830397",
-            "chunk_id": "058bdb62-9200-4eec-9164-d4c7b24e49c2",
+            "doc_id": "d6aad398-b1c0-43bd-ad9d-073629488d14",
+            "chunk_id": "07fed3df-9cdb-4062-bd68-6eeeff3a5b24",
             "path": "zh_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -493,7 +493,7 @@
       "top_k": 10,
       "result_count": 6,
       "total_candidates": 6,
-      "trace_id": "13e414c6-4f30-4d82-81f4-abce18235f30",
+      "trace_id": "6ec13ff2-025a-41b8-b061-b4f9fb96acd6",
       "duration_sec": 0.002,
       "hit_in_top10": true,
       "results": [
@@ -501,7 +501,7 @@
           "title": "Weekly Status Report",
           "path": "en_weekly_report.txt",
           "summary": "Weekly Status Report Completed authentication module review and testing. Next steps include integrating the identity provider. Performance benchmarks show improvement.",
-          "modified_at": "2026-03-22T18:07:30.119967",
+          "modified_at": "2026-03-23T16:50:05.818984",
           "score": 0.877754044532776,
           "score_breakdown": {
             "lexical_raw": -2.0672307833622425,
@@ -512,8 +512,8 @@
             "hybrid_score": 0.877754044532776
           },
           "citation": {
-            "doc_id": "03bad2d3-e084-42c7-a2b5-32d93a5b800c",
-            "chunk_id": "76537f3e-127e-4e6d-9553-bcd86d0a317d",
+            "doc_id": "2a5cd4a3-56d2-42d2-a674-3b3b5ed97ce8",
+            "chunk_id": "a90c7c33-9ff1-48e5-bfc7-5dd5ceda50a7",
             "path": "en_weekly_report.txt",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -525,7 +525,7 @@
           "title": "Project Plan",
           "path": "en_project_plan.md",
           "summary": "Project Plan Implementation schedule and milestones for the document management system. Phase 1: Foundation setup and architecture design. Phase 2: Core feature development.",
-          "modified_at": "2026-03-22T18:07:30.119879",
+          "modified_at": "2026-03-23T16:50:05.818910",
           "score": 0.27813201844692226,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -536,8 +536,8 @@
             "hybrid_score": 0.27813201844692226
           },
           "citation": {
-            "doc_id": "59a26f2c-98fc-4318-989a-a6742964272d",
-            "chunk_id": "d02e05ab-a7eb-4ae6-af0f-19b60af7e5ef",
+            "doc_id": "1b2cc51d-a4a6-4927-b858-c43d5147d49c",
+            "chunk_id": "c739a3f1-437c-4202-9355-fef7ad012b7d",
             "path": "en_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -549,7 +549,7 @@
           "title": "Alpha Directory Note",
           "path": "projects/alpha/alpha_directory_note.md",
           "summary": "Alpha Directory Note 目录过滤专项样本只应该在 alpha 目录命中。 This note exists to validate directory-prefix filtering.",
-          "modified_at": "2026-03-22T18:07:30.120134",
+          "modified_at": "2026-03-23T16:50:05.819141",
           "score": 0.23721586167812347,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -560,8 +560,8 @@
             "hybrid_score": 0.23721586167812347
           },
           "citation": {
-            "doc_id": "931bec08-b8a0-4d68-80cb-99871d8a6dbf",
-            "chunk_id": "8160dcc6-0b34-49bc-be1a-cef8fdb1f321",
+            "doc_id": "5ff16fd5-ca5f-426c-96f0-2b4f89a0698b",
+            "chunk_id": "6819dae3-1e09-4391-a4db-23a819868c49",
             "path": "projects/alpha/alpha_directory_note.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -573,7 +573,7 @@
           "title": "AI 技术报告",
           "path": "mixed_tech_report.md",
           "summary": "AI 技术报告 AI and machine learning 在文档分类中的应用。 DB schema 设计需要考虑可扩展性。 本报告涵盖自然语言处理的最新进展。",
-          "modified_at": "2026-03-22T18:07:30.119786",
+          "modified_at": "2026-03-23T16:50:05.818838",
           "score": 0.23117197751998902,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -584,8 +584,8 @@
             "hybrid_score": 0.23117197751998902
           },
           "citation": {
-            "doc_id": "03a37d7b-adb1-48ef-9a22-112e2ff9521f",
-            "chunk_id": "caa694c0-6a5f-4b8a-8d85-79a7bfeac6dc",
+            "doc_id": "82ccdd41-7f25-4190-9a43-a89af8ba5e2d",
+            "chunk_id": "8f69da06-b750-4757-bfb2-a26f5a7b611c",
             "path": "mixed_tech_report.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -598,18 +598,18 @@
           "path": "zh_project_plan.md",
           "summary": "项目计划书 本项目的目标是开发一个文档管理工具。 项目进度报告将每周更新。 第一阶段完成基础架构搭建。",
           "modified_at": "2026-03-10T12:00:00",
-          "score": 0.1939190572925349,
+          "score": 0.19228251888251113,
           "score_breakdown": {
             "lexical_raw": 0.0,
             "lexical_normalized": 0.0,
             "dense_raw": 0.6631391644477844,
             "dense_normalized": 0.3368608355522156,
-            "freshness_boost": 0.7601776484925943,
-            "hybrid_score": 0.1939190572925349
+            "freshness_boost": 0.7438122643923567,
+            "hybrid_score": 0.19228251888251113
           },
           "citation": {
-            "doc_id": "19b39c59-7fef-410a-ab56-83e697830397",
-            "chunk_id": "058bdb62-9200-4eec-9164-d4c7b24e49c2",
+            "doc_id": "d6aad398-b1c0-43bd-ad9d-073629488d14",
+            "chunk_id": "07fed3df-9cdb-4062-bd68-6eeeff3a5b24",
             "path": "zh_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -621,7 +621,7 @@
           "title": "会议纪要",
           "path": "zh_meeting_notes.md",
           "summary": "会议纪要 讨论了项目进度和下一步计划。 报告由团队负责人汇总。 下次会议定于周四下午两点。",
-          "modified_at": "2026-03-22T18:07:30.119697",
+          "modified_at": "2026-03-23T16:50:05.818759",
           "score": 0.17134066820144653,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -632,8 +632,8 @@
             "hybrid_score": 0.17134066820144653
           },
           "citation": {
-            "doc_id": "1a7260ce-9d6b-4b34-8b95-bfd863ad8870",
-            "chunk_id": "1f91987b-92dc-4c83-9881-bbdc32ba3d2d",
+            "doc_id": "400fd709-fd3a-4511-8070-0d59af3018e0",
+            "chunk_id": "884b6357-0d8e-4d6b-a3e7-6f2c123121db",
             "path": "zh_meeting_notes.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -653,15 +653,15 @@
       "top_k": 10,
       "result_count": 6,
       "total_candidates": 6,
-      "trace_id": "4e87c226-9e62-41b3-8f28-35560773adab",
-      "duration_sec": 0.003,
+      "trace_id": "a2133599-2f76-472c-b351-7157b244ad26",
+      "duration_sec": 0.002,
       "hit_in_top10": true,
       "results": [
         {
           "title": "AI 技术报告",
           "path": "mixed_tech_report.md",
           "summary": "AI 技术报告 AI and machine learning 在文档分类中的应用。 DB schema 设计需要考虑可扩展性。 本报告涵盖自然语言处理的最新进展。",
-          "modified_at": "2026-03-22T18:07:30.119786",
+          "modified_at": "2026-03-23T16:50:05.818838",
           "score": 0.7882282555103303,
           "score_breakdown": {
             "lexical_raw": -1.4217285009592906,
@@ -672,8 +672,8 @@
             "hybrid_score": 0.7882282555103303
           },
           "citation": {
-            "doc_id": "03a37d7b-adb1-48ef-9a22-112e2ff9521f",
-            "chunk_id": "caa694c0-6a5f-4b8a-8d85-79a7bfeac6dc",
+            "doc_id": "82ccdd41-7f25-4190-9a43-a89af8ba5e2d",
+            "chunk_id": "8f69da06-b750-4757-bfb2-a26f5a7b611c",
             "path": "mixed_tech_report.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -686,18 +686,18 @@
           "path": "zh_project_plan.md",
           "summary": "项目计划书 本项目的目标是开发一个文档管理工具。 项目进度报告将每周更新。 第一阶段完成基础架构搭建。",
           "modified_at": "2026-03-10T12:00:00",
-          "score": 0.22071988348443702,
+          "score": 0.21908334507441327,
           "score_breakdown": {
             "lexical_raw": 0.0,
             "lexical_normalized": 0.0,
             "dense_raw": 0.586565375328064,
             "dense_normalized": 0.41343462467193604,
-            "freshness_boost": 0.7601776484925943,
-            "hybrid_score": 0.22071988348443702
+            "freshness_boost": 0.7438122643923567,
+            "hybrid_score": 0.21908334507441327
           },
           "citation": {
-            "doc_id": "19b39c59-7fef-410a-ab56-83e697830397",
-            "chunk_id": "058bdb62-9200-4eec-9164-d4c7b24e49c2",
+            "doc_id": "d6aad398-b1c0-43bd-ad9d-073629488d14",
+            "chunk_id": "07fed3df-9cdb-4062-bd68-6eeeff3a5b24",
             "path": "zh_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -709,7 +709,7 @@
           "title": "会议纪要",
           "path": "zh_meeting_notes.md",
           "summary": "会议纪要 讨论了项目进度和下一步计划。 报告由团队负责人汇总。 下次会议定于周四下午两点。",
-          "modified_at": "2026-03-22T18:07:30.119697",
+          "modified_at": "2026-03-23T16:50:05.818759",
           "score": 0.19541869759559632,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -720,8 +720,8 @@
             "hybrid_score": 0.19541869759559632
           },
           "citation": {
-            "doc_id": "1a7260ce-9d6b-4b34-8b95-bfd863ad8870",
-            "chunk_id": "1f91987b-92dc-4c83-9881-bbdc32ba3d2d",
+            "doc_id": "400fd709-fd3a-4511-8070-0d59af3018e0",
+            "chunk_id": "884b6357-0d8e-4d6b-a3e7-6f2c123121db",
             "path": "zh_meeting_notes.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -733,7 +733,7 @@
           "title": "Alpha Directory Note",
           "path": "projects/alpha/alpha_directory_note.md",
           "summary": "Alpha Directory Note 目录过滤专项样本只应该在 alpha 目录命中。 This note exists to validate directory-prefix filtering.",
-          "modified_at": "2026-03-22T18:07:30.120134",
+          "modified_at": "2026-03-23T16:50:05.819141",
           "score": 0.19024689197540284,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -744,8 +744,8 @@
             "hybrid_score": 0.19024689197540284
           },
           "citation": {
-            "doc_id": "931bec08-b8a0-4d68-80cb-99871d8a6dbf",
-            "chunk_id": "8160dcc6-0b34-49bc-be1a-cef8fdb1f321",
+            "doc_id": "5ff16fd5-ca5f-426c-96f0-2b4f89a0698b",
+            "chunk_id": "6819dae3-1e09-4391-a4db-23a819868c49",
             "path": "projects/alpha/alpha_directory_note.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -757,7 +757,7 @@
           "title": "Weekly Status Report",
           "path": "en_weekly_report.txt",
           "summary": "Weekly Status Report Completed authentication module review and testing. Next steps include integrating the identity provider. Performance benchmarks show improvement.",
-          "modified_at": "2026-03-22T18:07:30.119967",
+          "modified_at": "2026-03-23T16:50:05.818984",
           "score": 0.18087030053138733,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -768,8 +768,8 @@
             "hybrid_score": 0.18087030053138733
           },
           "citation": {
-            "doc_id": "03bad2d3-e084-42c7-a2b5-32d93a5b800c",
-            "chunk_id": "76537f3e-127e-4e6d-9553-bcd86d0a317d",
+            "doc_id": "2a5cd4a3-56d2-42d2-a674-3b3b5ed97ce8",
+            "chunk_id": "a90c7c33-9ff1-48e5-bfc7-5dd5ceda50a7",
             "path": "en_weekly_report.txt",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -781,7 +781,7 @@
           "title": "Project Plan",
           "path": "en_project_plan.md",
           "summary": "Project Plan Implementation schedule and milestones for the document management system. Phase 1: Foundation setup and architecture design. Phase 2: Core feature development.",
-          "modified_at": "2026-03-22T18:07:30.119879",
+          "modified_at": "2026-03-23T16:50:05.818910",
           "score": 0.16545940041542054,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -792,8 +792,8 @@
             "hybrid_score": 0.16545940041542054
           },
           "citation": {
-            "doc_id": "59a26f2c-98fc-4318-989a-a6742964272d",
-            "chunk_id": "d02e05ab-a7eb-4ae6-af0f-19b60af7e5ef",
+            "doc_id": "1b2cc51d-a4a6-4927-b858-c43d5147d49c",
+            "chunk_id": "c739a3f1-437c-4202-9355-fef7ad012b7d",
             "path": "en_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -813,8 +813,8 @@
       "top_k": 10,
       "result_count": 6,
       "total_candidates": 6,
-      "trace_id": "37f72aac-1a5a-4814-8391-72da6d4834aa",
-      "duration_sec": 0.006,
+      "trace_id": "6855d8e8-1e7d-4083-8790-e5d93321d20f",
+      "duration_sec": 0.002,
       "hit_in_top10": true,
       "results": [
         {
@@ -822,18 +822,18 @@
           "path": "zh_project_plan.md",
           "summary": "项目计划书 本项目的目标是开发一个文档管理工具。 项目进度报告将每周更新。 第一阶段完成基础架构搭建。",
           "modified_at": "2026-03-10T12:00:00",
-          "score": 0.8196707284875651,
+          "score": 0.8180341900775414,
           "score_breakdown": {
             "lexical_raw": -1.647318407177855,
             "lexical_normalized": 1.0,
             "dense_raw": 0.44670581817626953,
             "dense_normalized": 0.5532941818237305,
-            "freshness_boost": 0.7601776484925943,
-            "hybrid_score": 0.8196707284875651
+            "freshness_boost": 0.7438122643923567,
+            "hybrid_score": 0.8180341900775414
           },
           "citation": {
-            "doc_id": "19b39c59-7fef-410a-ab56-83e697830397",
-            "chunk_id": "058bdb62-9200-4eec-9164-d4c7b24e49c2",
+            "doc_id": "d6aad398-b1c0-43bd-ad9d-073629488d14",
+            "chunk_id": "07fed3df-9cdb-4062-bd68-6eeeff3a5b24",
             "path": "zh_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -845,7 +845,7 @@
           "title": "会议纪要",
           "path": "zh_meeting_notes.md",
           "summary": "会议纪要 讨论了项目进度和下一步计划。 报告由团队负责人汇总。 下次会议定于周四下午两点。",
-          "modified_at": "2026-03-22T18:07:30.119697",
+          "modified_at": "2026-03-23T16:50:05.818759",
           "score": 0.22466920018196107,
           "score_breakdown": {
             "lexical_raw": -0.7688474897057251,
@@ -856,8 +856,8 @@
             "hybrid_score": 0.22466920018196107
           },
           "citation": {
-            "doc_id": "1a7260ce-9d6b-4b34-8b95-bfd863ad8870",
-            "chunk_id": "1f91987b-92dc-4c83-9881-bbdc32ba3d2d",
+            "doc_id": "400fd709-fd3a-4511-8070-0d59af3018e0",
+            "chunk_id": "884b6357-0d8e-4d6b-a3e7-6f2c123121db",
             "path": "zh_meeting_notes.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -869,7 +869,7 @@
           "title": "AI 技术报告",
           "path": "mixed_tech_report.md",
           "summary": "AI 技术报告 AI and machine learning 在文档分类中的应用。 DB schema 设计需要考虑可扩展性。 本报告涵盖自然语言处理的最新进展。",
-          "modified_at": "2026-03-22T18:07:30.119786",
+          "modified_at": "2026-03-23T16:50:05.818838",
           "score": 0.1933036834001541,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -880,8 +880,8 @@
             "hybrid_score": 0.1933036834001541
           },
           "citation": {
-            "doc_id": "03a37d7b-adb1-48ef-9a22-112e2ff9521f",
-            "chunk_id": "caa694c0-6a5f-4b8a-8d85-79a7bfeac6dc",
+            "doc_id": "82ccdd41-7f25-4190-9a43-a89af8ba5e2d",
+            "chunk_id": "8f69da06-b750-4757-bfb2-a26f5a7b611c",
             "path": "mixed_tech_report.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -893,7 +893,7 @@
           "title": "Weekly Status Report",
           "path": "en_weekly_report.txt",
           "summary": "Weekly Status Report Completed authentication module review and testing. Next steps include integrating the identity provider. Performance benchmarks show improvement.",
-          "modified_at": "2026-03-22T18:07:30.119967",
+          "modified_at": "2026-03-23T16:50:05.818984",
           "score": 0.16517046689987183,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -904,8 +904,8 @@
             "hybrid_score": 0.16517046689987183
           },
           "citation": {
-            "doc_id": "03bad2d3-e084-42c7-a2b5-32d93a5b800c",
-            "chunk_id": "76537f3e-127e-4e6d-9553-bcd86d0a317d",
+            "doc_id": "2a5cd4a3-56d2-42d2-a674-3b3b5ed97ce8",
+            "chunk_id": "a90c7c33-9ff1-48e5-bfc7-5dd5ceda50a7",
             "path": "en_weekly_report.txt",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -917,7 +917,7 @@
           "title": "Alpha Directory Note",
           "path": "projects/alpha/alpha_directory_note.md",
           "summary": "Alpha Directory Note 目录过滤专项样本只应该在 alpha 目录命中。 This note exists to validate directory-prefix filtering.",
-          "modified_at": "2026-03-22T18:07:30.120134",
+          "modified_at": "2026-03-23T16:50:05.819141",
           "score": 0.16176342964172363,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -928,8 +928,8 @@
             "hybrid_score": 0.16176342964172363
           },
           "citation": {
-            "doc_id": "931bec08-b8a0-4d68-80cb-99871d8a6dbf",
-            "chunk_id": "8160dcc6-0b34-49bc-be1a-cef8fdb1f321",
+            "doc_id": "5ff16fd5-ca5f-426c-96f0-2b4f89a0698b",
+            "chunk_id": "6819dae3-1e09-4391-a4db-23a819868c49",
             "path": "projects/alpha/alpha_directory_note.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -941,7 +941,7 @@
           "title": "Project Plan",
           "path": "en_project_plan.md",
           "summary": "Project Plan Implementation schedule and milestones for the document management system. Phase 1: Foundation setup and architecture design. Phase 2: Core feature development.",
-          "modified_at": "2026-03-22T18:07:30.119879",
+          "modified_at": "2026-03-23T16:50:05.818910",
           "score": 0.1581242024898529,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -952,8 +952,8 @@
             "hybrid_score": 0.1581242024898529
           },
           "citation": {
-            "doc_id": "59a26f2c-98fc-4318-989a-a6742964272d",
-            "chunk_id": "d02e05ab-a7eb-4ae6-af0f-19b60af7e5ef",
+            "doc_id": "1b2cc51d-a4a6-4927-b858-c43d5147d49c",
+            "chunk_id": "c739a3f1-437c-4202-9355-fef7ad012b7d",
             "path": "en_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -973,15 +973,15 @@
       "top_k": 10,
       "result_count": 6,
       "total_candidates": 6,
-      "trace_id": "1a5857e5-9f8d-4726-b950-681296da14ec",
-      "duration_sec": 0.003,
+      "trace_id": "d7e6b130-0cd8-4917-85c6-602c9d5e2ee5",
+      "duration_sec": 0.002,
       "hit_in_top10": true,
       "results": [
         {
           "title": "会议纪要",
           "path": "zh_meeting_notes.md",
           "summary": "会议纪要 讨论了项目进度和下一步计划。 报告由团队负责人汇总。 下次会议定于周四下午两点。",
-          "modified_at": "2026-03-22T18:07:30.119697",
+          "modified_at": "2026-03-23T16:50:05.818759",
           "score": 0.8022355437278748,
           "score_breakdown": {
             "lexical_raw": -1.6995119495136293,
@@ -992,8 +992,8 @@
             "hybrid_score": 0.8022355437278748
           },
           "citation": {
-            "doc_id": "1a7260ce-9d6b-4b34-8b95-bfd863ad8870",
-            "chunk_id": "1f91987b-92dc-4c83-9881-bbdc32ba3d2d",
+            "doc_id": "400fd709-fd3a-4511-8070-0d59af3018e0",
+            "chunk_id": "884b6357-0d8e-4d6b-a3e7-6f2c123121db",
             "path": "zh_meeting_notes.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1005,7 +1005,7 @@
           "title": "Alpha Directory Note",
           "path": "projects/alpha/alpha_directory_note.md",
           "summary": "Alpha Directory Note 目录过滤专项样本只应该在 alpha 目录命中。 This note exists to validate directory-prefix filtering.",
-          "modified_at": "2026-03-22T18:07:30.120134",
+          "modified_at": "2026-03-23T16:50:05.819141",
           "score": 0.1754203051328659,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1016,8 +1016,8 @@
             "hybrid_score": 0.1754203051328659
           },
           "citation": {
-            "doc_id": "931bec08-b8a0-4d68-80cb-99871d8a6dbf",
-            "chunk_id": "8160dcc6-0b34-49bc-be1a-cef8fdb1f321",
+            "doc_id": "5ff16fd5-ca5f-426c-96f0-2b4f89a0698b",
+            "chunk_id": "6819dae3-1e09-4391-a4db-23a819868c49",
             "path": "projects/alpha/alpha_directory_note.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1029,7 +1029,7 @@
           "title": "Project Plan",
           "path": "en_project_plan.md",
           "summary": "Project Plan Implementation schedule and milestones for the document management system. Phase 1: Foundation setup and architecture design. Phase 2: Core feature development.",
-          "modified_at": "2026-03-22T18:07:30.119879",
+          "modified_at": "2026-03-23T16:50:05.818910",
           "score": 0.17521955370903014,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1040,8 +1040,8 @@
             "hybrid_score": 0.17521955370903014
           },
           "citation": {
-            "doc_id": "59a26f2c-98fc-4318-989a-a6742964272d",
-            "chunk_id": "d02e05ab-a7eb-4ae6-af0f-19b60af7e5ef",
+            "doc_id": "1b2cc51d-a4a6-4927-b858-c43d5147d49c",
+            "chunk_id": "c739a3f1-437c-4202-9355-fef7ad012b7d",
             "path": "en_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1053,7 +1053,7 @@
           "title": "Weekly Status Report",
           "path": "en_weekly_report.txt",
           "summary": "Weekly Status Report Completed authentication module review and testing. Next steps include integrating the identity provider. Performance benchmarks show improvement.",
-          "modified_at": "2026-03-22T18:07:30.119967",
+          "modified_at": "2026-03-23T16:50:05.818984",
           "score": 0.16879104375839232,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1064,8 +1064,8 @@
             "hybrid_score": 0.16879104375839232
           },
           "citation": {
-            "doc_id": "03bad2d3-e084-42c7-a2b5-32d93a5b800c",
-            "chunk_id": "76537f3e-127e-4e6d-9553-bcd86d0a317d",
+            "doc_id": "2a5cd4a3-56d2-42d2-a674-3b3b5ed97ce8",
+            "chunk_id": "a90c7c33-9ff1-48e5-bfc7-5dd5ceda50a7",
             "path": "en_weekly_report.txt",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1077,7 +1077,7 @@
           "title": "AI 技术报告",
           "path": "mixed_tech_report.md",
           "summary": "AI 技术报告 AI and machine learning 在文档分类中的应用。 DB schema 设计需要考虑可扩展性。 本报告涵盖自然语言处理的最新进展。",
-          "modified_at": "2026-03-22T18:07:30.119786",
+          "modified_at": "2026-03-23T16:50:05.818838",
           "score": 0.13998729288578032,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1088,8 +1088,8 @@
             "hybrid_score": 0.13998729288578032
           },
           "citation": {
-            "doc_id": "03a37d7b-adb1-48ef-9a22-112e2ff9521f",
-            "chunk_id": "caa694c0-6a5f-4b8a-8d85-79a7bfeac6dc",
+            "doc_id": "82ccdd41-7f25-4190-9a43-a89af8ba5e2d",
+            "chunk_id": "8f69da06-b750-4757-bfb2-a26f5a7b611c",
             "path": "mixed_tech_report.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1102,18 +1102,18 @@
           "path": "zh_project_plan.md",
           "summary": "项目计划书 本项目的目标是开发一个文档管理工具。 项目进度报告将每周更新。 第一阶段完成基础架构搭建。",
           "modified_at": "2026-03-10T12:00:00",
-          "score": 0.1332999712653895,
+          "score": 0.13166343285536575,
           "score_breakdown": {
             "lexical_raw": 0.0,
             "lexical_normalized": 0.0,
             "dense_raw": 0.8363365530967712,
             "dense_normalized": 0.16366344690322876,
-            "freshness_boost": 0.7601776484925943,
-            "hybrid_score": 0.1332999712653895
+            "freshness_boost": 0.7438122643923567,
+            "hybrid_score": 0.13166343285536575
           },
           "citation": {
-            "doc_id": "19b39c59-7fef-410a-ab56-83e697830397",
-            "chunk_id": "058bdb62-9200-4eec-9164-d4c7b24e49c2",
+            "doc_id": "d6aad398-b1c0-43bd-ad9d-073629488d14",
+            "chunk_id": "07fed3df-9cdb-4062-bd68-6eeeff3a5b24",
             "path": "zh_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1133,15 +1133,15 @@
       "top_k": 10,
       "result_count": 6,
       "total_candidates": 6,
-      "trace_id": "25f548bc-38bc-4280-a19e-cc5fc260b524",
-      "duration_sec": 0.004,
+      "trace_id": "ae6054c1-bad8-446a-831f-9519d7ddbcf0",
+      "duration_sec": 0.002,
       "hit_in_top10": true,
       "results": [
         {
           "title": "Weekly Status Report",
           "path": "en_weekly_report.txt",
           "summary": "Weekly Status Report Completed authentication module review and testing. Next steps include integrating the identity provider. Performance benchmarks show improvement.",
-          "modified_at": "2026-03-22T18:07:30.119967",
+          "modified_at": "2026-03-23T16:50:05.818984",
           "score": 0.877754044532776,
           "score_breakdown": {
             "lexical_raw": -2.0672307833622425,
@@ -1152,8 +1152,8 @@
             "hybrid_score": 0.877754044532776
           },
           "citation": {
-            "doc_id": "03bad2d3-e084-42c7-a2b5-32d93a5b800c",
-            "chunk_id": "76537f3e-127e-4e6d-9553-bcd86d0a317d",
+            "doc_id": "2a5cd4a3-56d2-42d2-a674-3b3b5ed97ce8",
+            "chunk_id": "a90c7c33-9ff1-48e5-bfc7-5dd5ceda50a7",
             "path": "en_weekly_report.txt",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1165,7 +1165,7 @@
           "title": "Project Plan",
           "path": "en_project_plan.md",
           "summary": "Project Plan Implementation schedule and milestones for the document management system. Phase 1: Foundation setup and architecture design. Phase 2: Core feature development.",
-          "modified_at": "2026-03-22T18:07:30.119879",
+          "modified_at": "2026-03-23T16:50:05.818910",
           "score": 0.27813201844692226,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1176,8 +1176,8 @@
             "hybrid_score": 0.27813201844692226
           },
           "citation": {
-            "doc_id": "59a26f2c-98fc-4318-989a-a6742964272d",
-            "chunk_id": "d02e05ab-a7eb-4ae6-af0f-19b60af7e5ef",
+            "doc_id": "1b2cc51d-a4a6-4927-b858-c43d5147d49c",
+            "chunk_id": "c739a3f1-437c-4202-9355-fef7ad012b7d",
             "path": "en_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1189,7 +1189,7 @@
           "title": "Alpha Directory Note",
           "path": "projects/alpha/alpha_directory_note.md",
           "summary": "Alpha Directory Note 目录过滤专项样本只应该在 alpha 目录命中。 This note exists to validate directory-prefix filtering.",
-          "modified_at": "2026-03-22T18:07:30.120134",
+          "modified_at": "2026-03-23T16:50:05.819141",
           "score": 0.23721586167812347,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1200,8 +1200,8 @@
             "hybrid_score": 0.23721586167812347
           },
           "citation": {
-            "doc_id": "931bec08-b8a0-4d68-80cb-99871d8a6dbf",
-            "chunk_id": "8160dcc6-0b34-49bc-be1a-cef8fdb1f321",
+            "doc_id": "5ff16fd5-ca5f-426c-96f0-2b4f89a0698b",
+            "chunk_id": "6819dae3-1e09-4391-a4db-23a819868c49",
             "path": "projects/alpha/alpha_directory_note.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1213,7 +1213,7 @@
           "title": "AI 技术报告",
           "path": "mixed_tech_report.md",
           "summary": "AI 技术报告 AI and machine learning 在文档分类中的应用。 DB schema 设计需要考虑可扩展性。 本报告涵盖自然语言处理的最新进展。",
-          "modified_at": "2026-03-22T18:07:30.119786",
+          "modified_at": "2026-03-23T16:50:05.818838",
           "score": 0.23117197751998902,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1224,8 +1224,8 @@
             "hybrid_score": 0.23117197751998902
           },
           "citation": {
-            "doc_id": "03a37d7b-adb1-48ef-9a22-112e2ff9521f",
-            "chunk_id": "caa694c0-6a5f-4b8a-8d85-79a7bfeac6dc",
+            "doc_id": "82ccdd41-7f25-4190-9a43-a89af8ba5e2d",
+            "chunk_id": "8f69da06-b750-4757-bfb2-a26f5a7b611c",
             "path": "mixed_tech_report.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1237,7 +1237,7 @@
           "title": "会议纪要",
           "path": "zh_meeting_notes.md",
           "summary": "会议纪要 讨论了项目进度和下一步计划。 报告由团队负责人汇总。 下次会议定于周四下午两点。",
-          "modified_at": "2026-03-22T18:07:30.119697",
+          "modified_at": "2026-03-23T16:50:05.818759",
           "score": 0.19417133927345276,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1248,8 +1248,8 @@
             "hybrid_score": 0.19417133927345276
           },
           "citation": {
-            "doc_id": "1a7260ce-9d6b-4b34-8b95-bfd863ad8870",
-            "chunk_id": "1f91987b-92dc-4c83-9881-bbdc32ba3d2d",
+            "doc_id": "400fd709-fd3a-4511-8070-0d59af3018e0",
+            "chunk_id": "884b6357-0d8e-4d6b-a3e7-6f2c123121db",
             "path": "zh_meeting_notes.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1262,18 +1262,18 @@
           "path": "zh_project_plan.md",
           "summary": "项目计划书 本项目的目标是开发一个文档管理工具。 项目进度报告将每周更新。 第一阶段完成基础架构搭建。",
           "modified_at": "2026-03-10T12:00:00",
-          "score": 0.1939190572925349,
+          "score": 0.19228251888251113,
           "score_breakdown": {
             "lexical_raw": 0.0,
             "lexical_normalized": 0.0,
             "dense_raw": 0.6631391644477844,
             "dense_normalized": 0.3368608355522156,
-            "freshness_boost": 0.7601776484925943,
-            "hybrid_score": 0.1939190572925349
+            "freshness_boost": 0.7438122643923567,
+            "hybrid_score": 0.19228251888251113
           },
           "citation": {
-            "doc_id": "19b39c59-7fef-410a-ab56-83e697830397",
-            "chunk_id": "058bdb62-9200-4eec-9164-d4c7b24e49c2",
+            "doc_id": "d6aad398-b1c0-43bd-ad9d-073629488d14",
+            "chunk_id": "07fed3df-9cdb-4062-bd68-6eeeff3a5b24",
             "path": "zh_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1293,15 +1293,15 @@
       "top_k": 10,
       "result_count": 6,
       "total_candidates": 6,
-      "trace_id": "38b7e90c-1cd7-44b6-9108-9ede62e8f959",
-      "duration_sec": 0.003,
+      "trace_id": "d708568b-9640-4c27-872b-e8c68f876402",
+      "duration_sec": 0.002,
       "hit_in_top10": true,
       "results": [
         {
           "title": "Project Plan",
           "path": "en_project_plan.md",
           "summary": "Project Plan Implementation schedule and milestones for the document management system. Phase 1: Foundation setup and architecture design. Phase 2: Core feature development.",
-          "modified_at": "2026-03-22T18:07:30.119879",
+          "modified_at": "2026-03-23T16:50:05.818910",
           "score": 0.8158161282539368,
           "score_breakdown": {
             "lexical_raw": -2.0281490483984563,
@@ -1312,8 +1312,8 @@
             "hybrid_score": 0.8158161282539368
           },
           "citation": {
-            "doc_id": "59a26f2c-98fc-4318-989a-a6742964272d",
-            "chunk_id": "d02e05ab-a7eb-4ae6-af0f-19b60af7e5ef",
+            "doc_id": "1b2cc51d-a4a6-4927-b858-c43d5147d49c",
+            "chunk_id": "c739a3f1-437c-4202-9355-fef7ad012b7d",
             "path": "en_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1325,7 +1325,7 @@
           "title": "Alpha Directory Note",
           "path": "projects/alpha/alpha_directory_note.md",
           "summary": "Alpha Directory Note 目录过滤专项样本只应该在 alpha 目录命中。 This note exists to validate directory-prefix filtering.",
-          "modified_at": "2026-03-22T18:07:30.120134",
+          "modified_at": "2026-03-23T16:50:05.819141",
           "score": 0.2368523895740509,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1336,8 +1336,8 @@
             "hybrid_score": 0.2368523895740509
           },
           "citation": {
-            "doc_id": "931bec08-b8a0-4d68-80cb-99871d8a6dbf",
-            "chunk_id": "8160dcc6-0b34-49bc-be1a-cef8fdb1f321",
+            "doc_id": "5ff16fd5-ca5f-426c-96f0-2b4f89a0698b",
+            "chunk_id": "6819dae3-1e09-4391-a4db-23a819868c49",
             "path": "projects/alpha/alpha_directory_note.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1349,7 +1349,7 @@
           "title": "Weekly Status Report",
           "path": "en_weekly_report.txt",
           "summary": "Weekly Status Report Completed authentication module review and testing. Next steps include integrating the identity provider. Performance benchmarks show improvement.",
-          "modified_at": "2026-03-22T18:07:30.119967",
+          "modified_at": "2026-03-23T16:50:05.818984",
           "score": 0.21078824996948242,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1360,8 +1360,8 @@
             "hybrid_score": 0.21078824996948242
           },
           "citation": {
-            "doc_id": "03bad2d3-e084-42c7-a2b5-32d93a5b800c",
-            "chunk_id": "76537f3e-127e-4e6d-9553-bcd86d0a317d",
+            "doc_id": "2a5cd4a3-56d2-42d2-a674-3b3b5ed97ce8",
+            "chunk_id": "a90c7c33-9ff1-48e5-bfc7-5dd5ceda50a7",
             "path": "en_weekly_report.txt",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1373,7 +1373,7 @@
           "title": "会议纪要",
           "path": "zh_meeting_notes.md",
           "summary": "会议纪要 讨论了项目进度和下一步计划。 报告由团队负责人汇总。 下次会议定于周四下午两点。",
-          "modified_at": "2026-03-22T18:07:30.119697",
+          "modified_at": "2026-03-23T16:50:05.818759",
           "score": 0.20044943690299988,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1384,8 +1384,8 @@
             "hybrid_score": 0.20044943690299988
           },
           "citation": {
-            "doc_id": "1a7260ce-9d6b-4b34-8b95-bfd863ad8870",
-            "chunk_id": "1f91987b-92dc-4c83-9881-bbdc32ba3d2d",
+            "doc_id": "400fd709-fd3a-4511-8070-0d59af3018e0",
+            "chunk_id": "884b6357-0d8e-4d6b-a3e7-6f2c123121db",
             "path": "zh_meeting_notes.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1397,7 +1397,7 @@
           "title": "AI 技术报告",
           "path": "mixed_tech_report.md",
           "summary": "AI 技术报告 AI and machine learning 在文档分类中的应用。 DB schema 设计需要考虑可扩展性。 本报告涵盖自然语言处理的最新进展。",
-          "modified_at": "2026-03-22T18:07:30.119786",
+          "modified_at": "2026-03-23T16:50:05.818838",
           "score": 0.2000422805547714,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1408,8 +1408,8 @@
             "hybrid_score": 0.2000422805547714
           },
           "citation": {
-            "doc_id": "03a37d7b-adb1-48ef-9a22-112e2ff9521f",
-            "chunk_id": "caa694c0-6a5f-4b8a-8d85-79a7bfeac6dc",
+            "doc_id": "82ccdd41-7f25-4190-9a43-a89af8ba5e2d",
+            "chunk_id": "8f69da06-b750-4757-bfb2-a26f5a7b611c",
             "path": "mixed_tech_report.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1422,18 +1422,18 @@
           "path": "zh_project_plan.md",
           "summary": "项目计划书 本项目的目标是开发一个文档管理工具。 项目进度报告将每周更新。 第一阶段完成基础架构搭建。",
           "modified_at": "2026-03-10T12:00:00",
-          "score": 0.19728142981012065,
+          "score": 0.1956448914000969,
           "score_breakdown": {
             "lexical_raw": 0.0,
             "lexical_normalized": 0.0,
             "dense_raw": 0.6535323858261108,
             "dense_normalized": 0.34646761417388916,
-            "freshness_boost": 0.7601776484925943,
-            "hybrid_score": 0.19728142981012065
+            "freshness_boost": 0.7438122643923567,
+            "hybrid_score": 0.1956448914000969
           },
           "citation": {
-            "doc_id": "19b39c59-7fef-410a-ab56-83e697830397",
-            "chunk_id": "058bdb62-9200-4eec-9164-d4c7b24e49c2",
+            "doc_id": "d6aad398-b1c0-43bd-ad9d-073629488d14",
+            "chunk_id": "07fed3df-9cdb-4062-bd68-6eeeff3a5b24",
             "path": "zh_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1453,15 +1453,15 @@
       "top_k": 10,
       "result_count": 6,
       "total_candidates": 6,
-      "trace_id": "d043e534-1096-4887-b520-2556adb474a5",
-      "duration_sec": 0.003,
+      "trace_id": "1790552f-d057-4c98-b939-6c9fb64f2d3f",
+      "duration_sec": 0.002,
       "hit_in_top10": true,
       "results": [
         {
           "title": "AI 技术报告",
           "path": "mixed_tech_report.md",
           "summary": "AI 技术报告 AI and machine learning 在文档分类中的应用。 DB schema 设计需要考虑可扩展性。 本报告涵盖自然语言处理的最新进展。",
-          "modified_at": "2026-03-22T18:07:30.119786",
+          "modified_at": "2026-03-23T16:50:05.818838",
           "score": 0.7882282555103303,
           "score_breakdown": {
             "lexical_raw": -1.4217285009592906,
@@ -1472,8 +1472,8 @@
             "hybrid_score": 0.7882282555103303
           },
           "citation": {
-            "doc_id": "03a37d7b-adb1-48ef-9a22-112e2ff9521f",
-            "chunk_id": "caa694c0-6a5f-4b8a-8d85-79a7bfeac6dc",
+            "doc_id": "82ccdd41-7f25-4190-9a43-a89af8ba5e2d",
+            "chunk_id": "8f69da06-b750-4757-bfb2-a26f5a7b611c",
             "path": "mixed_tech_report.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1486,18 +1486,18 @@
           "path": "zh_project_plan.md",
           "summary": "项目计划书 本项目的目标是开发一个文档管理工具。 项目进度报告将每周更新。 第一阶段完成基础架构搭建。",
           "modified_at": "2026-03-10T12:00:00",
-          "score": 0.22071988348443702,
+          "score": 0.21908334507441327,
           "score_breakdown": {
             "lexical_raw": 0.0,
             "lexical_normalized": 0.0,
             "dense_raw": 0.586565375328064,
             "dense_normalized": 0.41343462467193604,
-            "freshness_boost": 0.7601776484925943,
-            "hybrid_score": 0.22071988348443702
+            "freshness_boost": 0.7438122643923567,
+            "hybrid_score": 0.21908334507441327
           },
           "citation": {
-            "doc_id": "19b39c59-7fef-410a-ab56-83e697830397",
-            "chunk_id": "058bdb62-9200-4eec-9164-d4c7b24e49c2",
+            "doc_id": "d6aad398-b1c0-43bd-ad9d-073629488d14",
+            "chunk_id": "07fed3df-9cdb-4062-bd68-6eeeff3a5b24",
             "path": "zh_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1509,7 +1509,7 @@
           "title": "会议纪要",
           "path": "zh_meeting_notes.md",
           "summary": "会议纪要 讨论了项目进度和下一步计划。 报告由团队负责人汇总。 下次会议定于周四下午两点。",
-          "modified_at": "2026-03-22T18:07:30.119697",
+          "modified_at": "2026-03-23T16:50:05.818759",
           "score": 0.19541869759559632,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1520,8 +1520,8 @@
             "hybrid_score": 0.19541869759559632
           },
           "citation": {
-            "doc_id": "1a7260ce-9d6b-4b34-8b95-bfd863ad8870",
-            "chunk_id": "1f91987b-92dc-4c83-9881-bbdc32ba3d2d",
+            "doc_id": "400fd709-fd3a-4511-8070-0d59af3018e0",
+            "chunk_id": "884b6357-0d8e-4d6b-a3e7-6f2c123121db",
             "path": "zh_meeting_notes.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1533,7 +1533,7 @@
           "title": "Alpha Directory Note",
           "path": "projects/alpha/alpha_directory_note.md",
           "summary": "Alpha Directory Note 目录过滤专项样本只应该在 alpha 目录命中。 This note exists to validate directory-prefix filtering.",
-          "modified_at": "2026-03-22T18:07:30.120134",
+          "modified_at": "2026-03-23T16:50:05.819141",
           "score": 0.19024689197540284,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1544,8 +1544,8 @@
             "hybrid_score": 0.19024689197540284
           },
           "citation": {
-            "doc_id": "931bec08-b8a0-4d68-80cb-99871d8a6dbf",
-            "chunk_id": "8160dcc6-0b34-49bc-be1a-cef8fdb1f321",
+            "doc_id": "5ff16fd5-ca5f-426c-96f0-2b4f89a0698b",
+            "chunk_id": "6819dae3-1e09-4391-a4db-23a819868c49",
             "path": "projects/alpha/alpha_directory_note.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1557,7 +1557,7 @@
           "title": "Weekly Status Report",
           "path": "en_weekly_report.txt",
           "summary": "Weekly Status Report Completed authentication module review and testing. Next steps include integrating the identity provider. Performance benchmarks show improvement.",
-          "modified_at": "2026-03-22T18:07:30.119967",
+          "modified_at": "2026-03-23T16:50:05.818984",
           "score": 0.18087030053138733,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1568,8 +1568,8 @@
             "hybrid_score": 0.18087030053138733
           },
           "citation": {
-            "doc_id": "03bad2d3-e084-42c7-a2b5-32d93a5b800c",
-            "chunk_id": "76537f3e-127e-4e6d-9553-bcd86d0a317d",
+            "doc_id": "2a5cd4a3-56d2-42d2-a674-3b3b5ed97ce8",
+            "chunk_id": "a90c7c33-9ff1-48e5-bfc7-5dd5ceda50a7",
             "path": "en_weekly_report.txt",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1581,7 +1581,7 @@
           "title": "Project Plan",
           "path": "en_project_plan.md",
           "summary": "Project Plan Implementation schedule and milestones for the document management system. Phase 1: Foundation setup and architecture design. Phase 2: Core feature development.",
-          "modified_at": "2026-03-22T18:07:30.119879",
+          "modified_at": "2026-03-23T16:50:05.818910",
           "score": 0.16545940041542054,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1592,8 +1592,8 @@
             "hybrid_score": 0.16545940041542054
           },
           "citation": {
-            "doc_id": "59a26f2c-98fc-4318-989a-a6742964272d",
-            "chunk_id": "d02e05ab-a7eb-4ae6-af0f-19b60af7e5ef",
+            "doc_id": "1b2cc51d-a4a6-4927-b858-c43d5147d49c",
+            "chunk_id": "c739a3f1-437c-4202-9355-fef7ad012b7d",
             "path": "en_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1613,15 +1613,15 @@
       "top_k": 10,
       "result_count": 6,
       "total_candidates": 6,
-      "trace_id": "ae2726de-bd4d-48bd-880f-8731b8624459",
-      "duration_sec": 0.004,
+      "trace_id": "1e8cf11c-6f1e-40fe-a5d7-8959d93847fe",
+      "duration_sec": 0.002,
       "hit_in_top10": true,
       "results": [
         {
           "title": "AI 技术报告",
           "path": "mixed_tech_report.md",
           "summary": "AI 技术报告 AI and machine learning 在文档分类中的应用。 DB schema 设计需要考虑可扩展性。 本报告涵盖自然语言处理的最新进展。",
-          "modified_at": "2026-03-22T18:07:30.119786",
+          "modified_at": "2026-03-23T16:50:05.818838",
           "score": 0.23888796269893645,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1632,8 +1632,8 @@
             "hybrid_score": 0.23888796269893645
           },
           "citation": {
-            "doc_id": "03a37d7b-adb1-48ef-9a22-112e2ff9521f",
-            "chunk_id": "caa694c0-6a5f-4b8a-8d85-79a7bfeac6dc",
+            "doc_id": "82ccdd41-7f25-4190-9a43-a89af8ba5e2d",
+            "chunk_id": "8f69da06-b750-4757-bfb2-a26f5a7b611c",
             "path": "mixed_tech_report.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1645,7 +1645,7 @@
           "title": "Weekly Status Report",
           "path": "en_weekly_report.txt",
           "summary": "Weekly Status Report Completed authentication module review and testing. Next steps include integrating the identity provider. Performance benchmarks show improvement.",
-          "modified_at": "2026-03-22T18:07:30.119967",
+          "modified_at": "2026-03-23T16:50:05.818984",
           "score": 0.2383291631937027,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1656,8 +1656,8 @@
             "hybrid_score": 0.2383291631937027
           },
           "citation": {
-            "doc_id": "03bad2d3-e084-42c7-a2b5-32d93a5b800c",
-            "chunk_id": "76537f3e-127e-4e6d-9553-bcd86d0a317d",
+            "doc_id": "2a5cd4a3-56d2-42d2-a674-3b3b5ed97ce8",
+            "chunk_id": "a90c7c33-9ff1-48e5-bfc7-5dd5ceda50a7",
             "path": "en_weekly_report.txt",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1669,7 +1669,7 @@
           "title": "Alpha Directory Note",
           "path": "projects/alpha/alpha_directory_note.md",
           "summary": "Alpha Directory Note 目录过滤专项样本只应该在 alpha 目录命中。 This note exists to validate directory-prefix filtering.",
-          "modified_at": "2026-03-22T18:07:30.120134",
+          "modified_at": "2026-03-23T16:50:05.819141",
           "score": 0.2101884990930557,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1680,8 +1680,8 @@
             "hybrid_score": 0.2101884990930557
           },
           "citation": {
-            "doc_id": "931bec08-b8a0-4d68-80cb-99871d8a6dbf",
-            "chunk_id": "8160dcc6-0b34-49bc-be1a-cef8fdb1f321",
+            "doc_id": "5ff16fd5-ca5f-426c-96f0-2b4f89a0698b",
+            "chunk_id": "6819dae3-1e09-4391-a4db-23a819868c49",
             "path": "projects/alpha/alpha_directory_note.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1693,7 +1693,7 @@
           "title": "Project Plan",
           "path": "en_project_plan.md",
           "summary": "Project Plan Implementation schedule and milestones for the document management system. Phase 1: Foundation setup and architecture design. Phase 2: Core feature development.",
-          "modified_at": "2026-03-22T18:07:30.119879",
+          "modified_at": "2026-03-23T16:50:05.818910",
           "score": 0.2081986963748932,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1704,8 +1704,8 @@
             "hybrid_score": 0.2081986963748932
           },
           "citation": {
-            "doc_id": "59a26f2c-98fc-4318-989a-a6742964272d",
-            "chunk_id": "d02e05ab-a7eb-4ae6-af0f-19b60af7e5ef",
+            "doc_id": "1b2cc51d-a4a6-4927-b858-c43d5147d49c",
+            "chunk_id": "c739a3f1-437c-4202-9355-fef7ad012b7d",
             "path": "en_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1717,7 +1717,7 @@
           "title": "会议纪要",
           "path": "zh_meeting_notes.md",
           "summary": "会议纪要 讨论了项目进度和下一步计划。 报告由团队负责人汇总。 下次会议定于周四下午两点。",
-          "modified_at": "2026-03-22T18:07:30.119697",
+          "modified_at": "2026-03-23T16:50:05.818759",
           "score": 0.175537171959877,
           "score_breakdown": {
             "lexical_raw": 0.0,
@@ -1728,8 +1728,8 @@
             "hybrid_score": 0.175537171959877
           },
           "citation": {
-            "doc_id": "1a7260ce-9d6b-4b34-8b95-bfd863ad8870",
-            "chunk_id": "1f91987b-92dc-4c83-9881-bbdc32ba3d2d",
+            "doc_id": "400fd709-fd3a-4511-8070-0d59af3018e0",
+            "chunk_id": "884b6357-0d8e-4d6b-a3e7-6f2c123121db",
             "path": "zh_meeting_notes.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1742,18 +1742,18 @@
           "path": "zh_project_plan.md",
           "summary": "项目计划书 本项目的目标是开发一个文档管理工具。 项目进度报告将每周更新。 第一阶段完成基础架构搭建。",
           "modified_at": "2026-03-10T12:00:00",
-          "score": 0.1681281632610102,
+          "score": 0.16649162485098645,
           "score_breakdown": {
             "lexical_raw": 0.0,
             "lexical_normalized": 0.0,
             "dense_raw": 0.7368274331092834,
             "dense_normalized": 0.26317256689071655,
-            "freshness_boost": 0.7601776484925943,
-            "hybrid_score": 0.1681281632610102
+            "freshness_boost": 0.7438122643923567,
+            "hybrid_score": 0.16649162485098645
           },
           "citation": {
-            "doc_id": "19b39c59-7fef-410a-ab56-83e697830397",
-            "chunk_id": "058bdb62-9200-4eec-9164-d4c7b24e49c2",
+            "doc_id": "d6aad398-b1c0-43bd-ad9d-073629488d14",
+            "chunk_id": "07fed3df-9cdb-4062-bd68-6eeeff3a5b24",
             "path": "zh_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1776,7 +1776,7 @@
       },
       "result_count": 1,
       "total_candidates": 1,
-      "trace_id": "d3f8068a-4773-408e-be4f-9a1a3784bcf6",
+      "trace_id": "997992ec-e7ca-4cde-aa72-05900e8e2560",
       "duration_sec": 0.001,
       "hit_in_results": true,
       "results": [
@@ -1784,7 +1784,7 @@
           "title": "Alpha Directory Note",
           "path": "projects/alpha/alpha_directory_note.md",
           "summary": "Alpha Directory Note 目录过滤专项样本只应该在 alpha 目录命中。 This note exists to validate directory-prefix filtering.",
-          "modified_at": "2026-03-22T18:07:30.120134",
+          "modified_at": "2026-03-23T16:50:05.819141",
           "score": 0.7807954460382461,
           "score_breakdown": {
             "lexical_raw": -1.3063145817593482,
@@ -1795,8 +1795,8 @@
             "hybrid_score": 0.7807954460382461
           },
           "citation": {
-            "doc_id": "931bec08-b8a0-4d68-80cb-99871d8a6dbf",
-            "chunk_id": "8160dcc6-0b34-49bc-be1a-cef8fdb1f321",
+            "doc_id": "5ff16fd5-ca5f-426c-96f0-2b4f89a0698b",
+            "chunk_id": "6819dae3-1e09-4391-a4db-23a819868c49",
             "path": "projects/alpha/alpha_directory_note.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1812,12 +1812,12 @@
       "expect_doc": "projects/alpha/alpha_directory_note.md",
       "filters": {
         "directory_prefixes": [
-          "/private/var/folders/g4/k84lz_ls7hq_fk_8js7vrmd00000gn/T/opendocs-tc005-sl6rdzzk/corpus/projects/alpha"
+          "/private/var/folders/g4/k84lz_ls7hq_fk_8js7vrmd00000gn/T/opendocs-tc005-6j9ddcv0/corpus/projects/alpha"
         ]
       },
       "result_count": 1,
       "total_candidates": 1,
-      "trace_id": "a011cbcd-1883-43aa-9821-073bfa8188ce",
+      "trace_id": "73e88f5d-757d-4c5a-9fcc-63fb403f8437",
       "duration_sec": 0.001,
       "hit_in_results": true,
       "results": [
@@ -1825,7 +1825,7 @@
           "title": "Alpha Directory Note",
           "path": "projects/alpha/alpha_directory_note.md",
           "summary": "Alpha Directory Note 目录过滤专项样本只应该在 alpha 目录命中。 This note exists to validate directory-prefix filtering.",
-          "modified_at": "2026-03-22T18:07:30.120134",
+          "modified_at": "2026-03-23T16:50:05.819141",
           "score": 0.7807954460382461,
           "score_breakdown": {
             "lexical_raw": -1.3063145817593482,
@@ -1836,8 +1836,8 @@
             "hybrid_score": 0.7807954460382461
           },
           "citation": {
-            "doc_id": "931bec08-b8a0-4d68-80cb-99871d8a6dbf",
-            "chunk_id": "8160dcc6-0b34-49bc-be1a-cef8fdb1f321",
+            "doc_id": "5ff16fd5-ca5f-426c-96f0-2b4f89a0698b",
+            "chunk_id": "6819dae3-1e09-4391-a4db-23a819868c49",
             "path": "projects/alpha/alpha_directory_note.md",
             "page_no": null,
             "paragraph_range": "1-2",
@@ -1852,8 +1852,8 @@
       "query": "项目",
       "expect_doc": "zh_project_plan.md",
       "filters": {
-        "source_root_ids": [
-          "bdd14036-969f-46b0-828b-507e1f5413c8"
+        "directory_prefixes": [
+          "/private/var/folders/g4/k84lz_ls7hq_fk_8js7vrmd00000gn/T/opendocs-tc005-6j9ddcv0/corpus"
         ],
         "categories": [
           "project"
@@ -1872,8 +1872,8 @@
       },
       "result_count": 1,
       "total_candidates": 1,
-      "trace_id": "1adff0d6-50e9-4561-ad80-48eba4dbf678",
-      "duration_sec": 0.002,
+      "trace_id": "019a3abc-d8a3-4833-b484-f8999ebbbb1f",
+      "duration_sec": 0.001,
       "hit_in_results": true,
       "results": [
         {
@@ -1881,18 +1881,18 @@
           "path": "zh_project_plan.md",
           "summary": "项目计划书 本项目的目标是开发一个文档管理工具。 项目进度报告将每周更新。 第一阶段完成基础架构搭建。",
           "modified_at": "2026-03-10T12:00:00",
-          "score": 0.2510178482957621,
+          "score": 0.24938130988573834,
           "score_breakdown": {
             "lexical_raw": 0.0,
             "lexical_normalized": 0.0,
             "dense_raw": 0.4999997615814209,
             "dense_normalized": 0.5000002384185791,
-            "freshness_boost": 0.7601776484925943,
-            "hybrid_score": 0.2510178482957621
+            "freshness_boost": 0.7438122643923567,
+            "hybrid_score": 0.24938130988573834
           },
           "citation": {
-            "doc_id": "19b39c59-7fef-410a-ab56-83e697830397",
-            "chunk_id": "058bdb62-9200-4eec-9164-d4c7b24e49c2",
+            "doc_id": "d6aad398-b1c0-43bd-ad9d-073629488d14",
+            "chunk_id": "07fed3df-9cdb-4062-bd68-6eeeff3a5b24",
             "path": "zh_project_plan.md",
             "page_no": null,
             "paragraph_range": "1-2",

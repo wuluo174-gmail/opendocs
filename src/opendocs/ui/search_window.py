@@ -17,8 +17,9 @@ from PySide6.QtWidgets import (
 )
 
 from opendocs.app.search_service import SearchService
+from opendocs.exceptions import SearchExecutionError
 from opendocs.retrieval.evidence import SearchResult
-from opendocs.retrieval.evidence_locator import EvidenceLocation
+from opendocs.retrieval.evidence_locator import EvidenceLocation, ExternalActionResult
 from opendocs.retrieval.filters import SearchFilter
 from opendocs.ui.document_preview_panel import DocumentPreviewPanel
 from opendocs.ui.evidence_panel import EvidencePanel
@@ -29,17 +30,24 @@ class SearchWindow(QWidget):
 
     evidence_activated = Signal(object)
 
-    def __init__(self, search_service: SearchService, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        search_service: SearchService,
+        parent: QWidget | None = None,
+        *,
+        auto_open_on_locate: bool = True,
+    ) -> None:
         super().__init__(parent)
         self._search_service = search_service
+        self._auto_open_on_locate = auto_open_on_locate
         self._current_result: SearchResult | None = None
 
         self.query_input = QLineEdit(self)
         self.query_input.setPlaceholderText("Search query")
+        self.root_filter_input = QLineEdit(self)
+        self.root_filter_input.setPlaceholderText("Root")
         self.directory_filter_input = QLineEdit(self)
-        self.directory_filter_input.setPlaceholderText("Dir prefix")
-        self.source_root_filter_input = QLineEdit(self)
-        self.source_root_filter_input.setPlaceholderText("Source root id")
+        self.directory_filter_input.setPlaceholderText("Dir")
         self.category_filter_input = QLineEdit(self)
         self.category_filter_input.setPlaceholderText("Category")
         self.tags_filter_input = QLineEdit(self)
@@ -63,8 +71,8 @@ class SearchWindow(QWidget):
         controls.addWidget(self.search_button)
 
         filter_bar_top = QHBoxLayout()
+        filter_bar_top.addWidget(self.root_filter_input)
         filter_bar_top.addWidget(self.directory_filter_input)
-        filter_bar_top.addWidget(self.source_root_filter_input)
         filter_bar_top.addWidget(self.category_filter_input)
         filter_bar_top.addWidget(self.tags_filter_input)
 
@@ -107,7 +115,14 @@ class SearchWindow(QWidget):
             self.status_label.setText(str(exc))
             return
 
-        response = self._search_service.search(query, filters=filters)
+        try:
+            response = self._search_service.search(query, filters=filters)
+        except ValueError as exc:
+            self.status_label.setText(str(exc))
+            return
+        except SearchExecutionError as exc:
+            self.status_label.setText(str(exc))
+            return
         self.status_label.setText(f"{len(response.results)} results")
 
         for result in response.results:
@@ -118,8 +133,8 @@ class SearchWindow(QWidget):
             self.results_list.setCurrentRow(0)
 
     def _collect_filters(self) -> SearchFilter | None:
+        source_roots = self._csv_values(self.root_filter_input.text())
         directory_prefixes = self._csv_values(self.directory_filter_input.text())
-        source_root_ids = self._csv_values(self.source_root_filter_input.text())
         categories = self._csv_values(self.category_filter_input.text())
         tags = self._csv_values(self.tags_filter_input.text())
         file_types = self._csv_values(self.file_type_filter_input.text())
@@ -128,8 +143,8 @@ class SearchWindow(QWidget):
 
         if not any(
             [
+                source_roots,
                 directory_prefixes,
-                source_root_ids,
                 categories,
                 tags,
                 file_types,
@@ -140,8 +155,8 @@ class SearchWindow(QWidget):
             return None
 
         return SearchFilter(
+            source_roots=source_roots,
             directory_prefixes=directory_prefixes,
-            source_root_ids=source_root_ids,
             categories=categories,
             tags=tags,
             file_types=file_types,
@@ -202,28 +217,50 @@ class SearchWindow(QWidget):
         if self._current_result is None:
             return
         self.evidence_activated.emit(location)
-        preview = self._search_service.load_evidence_preview(
+        activation = self._search_service.activate_evidence(
             self._current_result.doc_id,
             self._current_result.chunk_id,
+            auto_open=self._auto_open_on_locate and location.can_open,
         )
-        self.document_preview_panel.set_preview(preview)
+        self.document_preview_panel.set_preview(activation.preview)
+        self.status_label.setText(
+            self._build_locate_status(
+                preview_ready=activation.preview is not None,
+                action=activation.external_action,
+            )
+        )
 
     def _open_selected_evidence(self, location: object) -> None:
         if not isinstance(location, EvidenceLocation):
             return
         if self._current_result is None or not location.can_open:
             return
-        self._search_service.open_evidence(
+        action = self._search_service.open_evidence(
             self._current_result.doc_id,
             self._current_result.chunk_id,
         )
+        self.status_label.setText(action.message)
 
     def _reveal_selected_evidence(self, location: object) -> None:
         if not isinstance(location, EvidenceLocation):
             return
         if self._current_result is None or not location.can_open:
             return
-        self._search_service.reveal_evidence(
+        action = self._search_service.reveal_evidence(
             self._current_result.doc_id,
             self._current_result.chunk_id,
         )
+        self.status_label.setText(action.message)
+
+    @staticmethod
+    def _build_locate_status(
+        *,
+        preview_ready: bool,
+        action: ExternalActionResult | None,
+    ) -> str:
+        preview_status = (
+            "Evidence preview ready." if preview_ready else "Evidence preview unavailable."
+        )
+        if action is None:
+            return preview_status
+        return f"{preview_status} {action.message.rstrip('.')}."

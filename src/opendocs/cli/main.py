@@ -140,16 +140,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--top-k", type=int, default=None, help="Number of results (default: 12)"
     )
     search_parser.add_argument(
+        "--root",
+        dest="root_prefixes",
+        default=None,
+        help="Comma-separated source root paths or display_root labels",
+    )
+    search_parser.add_argument(
         "--dir",
         dest="directory_prefixes",
         default=None,
         help="Comma-separated directory prefixes",
-    )
-    search_parser.add_argument(
-        "--source-root-id",
-        dest="source_root_ids",
-        default=None,
-        help="Comma-separated source root ids",
     )
     search_parser.add_argument(
         "--category",
@@ -276,7 +276,9 @@ def build_parser() -> argparse.ArgumentParser:
         "update",
         help="Update a source root configuration",
     )
-    source_update_parser.add_argument("source_root_id", help="Source root id")
+    source_update_parser.add_argument(
+        "path", type=Path, help="Configured source root directory path"
+    )
     source_update_parser.add_argument(
         "--db",
         type=Path,
@@ -367,8 +369,8 @@ def _build_search_filter(args: argparse.Namespace):
         time_range = (time_from, time_to)
 
     return SearchFilter(
+        source_roots=_parse_csv_option(getattr(args, "root_prefixes", None)),
         directory_prefixes=_parse_csv_option(getattr(args, "directory_prefixes", None)),
-        source_root_ids=_parse_csv_option(getattr(args, "source_root_ids", None)),
         categories=_parse_csv_option(getattr(args, "categories", None)),
         tags=_parse_csv_option(getattr(args, "tags", None)),
         file_types=_parse_csv_option(getattr(args, "file_types", None)),
@@ -411,7 +413,11 @@ def _build_source_default_metadata(
             else getattr(args, "default_category", None)
         )
     if has_tag_update:
-        tags = [] if getattr(args, "clear_tags", False) else (_parse_multi_value_option(args.default_tags) or [])
+        tags = (
+            []
+            if getattr(args, "clear_tags", False)
+            else (_parse_multi_value_option(args.default_tags) or [])
+        )
     if has_sensitivity_update:
         sensitivity = (
             None
@@ -528,33 +534,26 @@ def _print_source(source) -> None:
 
     rules = ExcludeRules.model_validate(source.exclude_rules_json or {})
     default_tags = ",".join(source.default_tags_json or [])
-    print(f"source_root_id={source.source_root_id}")
     print(f"path={source.path}")
     print(f"label={source.label or ''}")
     print(f"recursive={source.recursive}")
     print(f"exclude_ignore_hidden={rules.ignore_hidden}")
     print(f"exclude_dirs={','.join(rules.exclude_dirs)}")
     print(f"exclude_globs={','.join(rules.exclude_globs)}")
-    print(
-        "exclude_max_size_bytes="
-        f"{'' if rules.max_size_bytes is None else rules.max_size_bytes}"
-    )
+    print(f"exclude_max_size_bytes={'' if rules.max_size_bytes is None else rules.max_size_bytes}")
     print(f"default_category={source.default_category or ''}")
     print(f"default_tags={default_tags}")
     print(f"default_sensitivity={source.default_sensitivity or ''}")
 
 
 def _find_source_by_path(service, path: Path):
-    resolved = path.expanduser().resolve()
-    for source in service.list_sources():
-        if Path(source.path).resolve() == resolved:
-            return source
-    return None
+    return service.get_source_by_path(path)
 
 
 def _run_search(args: argparse.Namespace) -> int:
     """Execute the search subcommand."""
     from opendocs.app.search_service import SearchService
+    from opendocs.exceptions import SearchExecutionError
     from opendocs.storage.db import build_sqlite_engine, init_db
 
     settings, _, db_path, hnsw_path = _resolve_runtime(args)
@@ -577,6 +576,9 @@ def _run_search(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"Search error: {exc}")
         return 1
+    except SearchExecutionError as exc:
+        print(f"Search error: {exc}")
+        return 2
 
     if not response.results:
         print("No results found.")
@@ -613,10 +615,11 @@ def _run_search(args: argparse.Namespace) -> int:
         idx = args.open_n - 1
         if 0 <= idx < len(response.results):
             selected = response.results[idx]
-            if svc.open_evidence(selected.doc_id, selected.chunk_id):
-                print(f"Opened: {selected.path}")
+            action = svc.open_evidence(selected.doc_id, selected.chunk_id)
+            if action.launched:
+                print(f"Open request launched: {selected.path}")
             else:
-                print(f"Cannot open: {selected.path}")
+                print(f"Open failed: {action.message}")
         else:
             print(f"Invalid result number: {args.open_n}")
 
@@ -720,7 +723,7 @@ def _run_watch(args: argparse.Namespace) -> int:
 
 def _run_source(args: argparse.Namespace) -> int:
     from opendocs.app.source_service import SourceService
-    from opendocs.exceptions import SourceNotFoundError
+    from opendocs.exceptions import SourceNotFoundError, SourceOverlapError
     from opendocs.storage.db import build_sqlite_engine, init_db
 
     _, _, db_path, hnsw_path = _resolve_runtime(args)
@@ -757,18 +760,19 @@ def _run_source(args: argparse.Namespace) -> int:
             return 0
 
         if args.source_command == "update":
-            existing_source = service.get_source(args.source_root_id)
+            existing_source = service.get_source_by_path(args.path)
             if existing_source is None:
-                print(f"source error: source root not found: {args.source_root_id}")
+                resolved_path = args.path.expanduser().resolve()
+                print(f"source error: source root not found for path: {resolved_path}")
                 return 1
-            source = service.update_source(
-                args.source_root_id,
+            source = service.update_source_by_path(
+                args.path,
                 **_build_source_service_kwargs(args, existing_source=existing_source),
             )
             print("source_status=updated")
             _print_source(source)
             return 0
-    except (SourceNotFoundError, ValueError) as exc:
+    except (SourceNotFoundError, SourceOverlapError, ValueError) as exc:
         print(f"source error: {exc}")
         return 1
 

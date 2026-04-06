@@ -35,3 +35,15 @@ class TestStageSearchCorpus:
         assert project_plan.metadata.category == "project"
         assert project_plan.metadata.tags == ["shared-source", "roadmap", "alpha"]
         assert project_plan.metadata.sensitivity == "sensitive"
+
+    def test_profiles_are_returned_as_isolated_copies(self) -> None:
+        profiles = build_s4_search_document_profiles()
+        profiles["zh_project_plan.md"].metadata.tags.append("polluted")
+
+        fresh_profiles = build_s4_search_document_profiles()
+
+        assert fresh_profiles["zh_project_plan.md"].metadata.tags == [
+            "shared-source",
+            "roadmap",
+            "alpha",
+        ]

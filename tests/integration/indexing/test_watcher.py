@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 
@@ -258,3 +259,58 @@ class TestWatcher:
         stopped = index_service.get_index_status()
         assert stopped.watcher_running is False
         assert stopped.watched_source_count == 0
+
+    def test_watcher_serializes_index_mutations(
+        self,
+        source_service: SourceService,
+        index_service: IndexService,
+        engine: Engine,
+        corpus_copy: Path,
+        monkeypatch,
+    ) -> None:
+        """Watcher events must be processed by a single writer, never in parallel."""
+        source = source_service.add_source(corpus_copy)
+        index_service.full_index_source(source.source_root_id)
+
+        status = index_service.start_watching_active_sources(debounce_seconds=0.1)
+        assert status.watcher_running is True
+        watcher = index_service._watcher
+        assert watcher is not None
+
+        active_calls = 0
+        max_active_calls = 0
+        counters_lock = threading.Lock()
+        original_index_file = watcher._builder.index_file
+
+        def wrapped_index_file(*args, **kwargs):
+            nonlocal active_calls, max_active_calls
+            with counters_lock:
+                active_calls += 1
+                max_active_calls = max(max_active_calls, active_calls)
+            try:
+                time.sleep(0.15)
+                return original_index_file(*args, **kwargs)
+            finally:
+                with counters_lock:
+                    active_calls -= 1
+
+        monkeypatch.setattr(watcher._builder, "index_file", wrapped_index_file)
+
+        try:
+            for suffix in ("a", "b", "c"):
+                new_file = corpus_copy / f"watcher_serial_{suffix}.txt"
+                new_file.write_text(f"UNIQUE_KW_WATCHER_SERIAL_{suffix.upper()} content.")
+            time.sleep(3.0)
+        finally:
+            index_service.stop_watching()
+
+        assert max_active_calls == 1
+        with session_scope(engine) as session:
+            for suffix in ("A", "B", "C"):
+                rows = session.execute(
+                    text(
+                        "SELECT chunk_id FROM chunk_fts "
+                        f"WHERE chunk_fts MATCH 'UNIQUE_KW_WATCHER_SERIAL_{suffix}'"
+                    )
+                ).fetchall()
+                assert len(rows) >= 1

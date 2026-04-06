@@ -5,12 +5,41 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from opendocs.app.search_service import SearchService
 from opendocs.cli.main import main as cli_main
-from opendocs.exceptions import SchemaCompatibilityError
-from opendocs.retrieval.evidence_locator import EvidenceLocator
+from opendocs.exceptions import SchemaCompatibilityError, SearchExecutionError
+from opendocs.retrieval.evidence_locator import EvidenceLocator, ExternalActionResult
+from opendocs.storage.db import session_scope
+
+
+def _build_action_result(
+    *,
+    action: str = "open",
+    status: str = "launched",
+    target_path: str = "/tmp/example.txt",
+    external_target: str | None = "file:///tmp/example.txt",
+    locator_hint_applied: bool = True,
+    message: str | None = None,
+    error: str | None = None,
+) -> ExternalActionResult:
+    resolved_message = message
+    if resolved_message is None:
+        if status == "launched":
+            resolved_message = f"external {action} request launched"
+        else:
+            resolved_message = f"{action} action failed: {status}"
+    return ExternalActionResult(
+        action=action,
+        status=status,
+        target_path=target_path,
+        external_target=external_target,
+        locator_hint_applied=locator_hint_applied,
+        message=resolved_message,
+        error=error,
+    )
 
 
 class TestCliSearchSmoke:
@@ -54,17 +83,14 @@ class TestCliSearchSmoke:
         assert "exclude_dirs=__pycache__,.git,tmp-cache" in add_output
         assert "exclude_globs=*.tmp" in add_output
         assert "exclude_max_size_bytes=2048" in add_output
-        source_root_id = next(
-            line.split("=", 1)[1]
-            for line in add_output.splitlines()
-            if line.startswith("source_root_id=")
-        )
+        assert f"path={search_corpus.resolve()}" in add_output
+        assert "source_root_id=" not in add_output
 
         exit_code = cli_main(
             [
                 "source",
                 "update",
-                source_root_id,
+                str(search_corpus),
                 "--db",
                 str(db_path),
                 "--hnsw",
@@ -127,11 +153,109 @@ class TestCliSearchSmoke:
         )
         assert exit_code == 0
         list_output = capsys.readouterr().out
-        assert f"source_root_id={source_root_id}" in list_output
+        assert f"path={search_corpus.resolve()}" in list_output
+        assert "source_root_id=" not in list_output
         assert "exclude_ignore_hidden=False" in list_output
         assert "exclude_dirs=__pycache__,.git,tmp-cache,archive" in list_output
         assert "exclude_globs=*.bak" in list_output
         assert "default_category=operations" in list_output
+
+    def test_cli_source_update_rejects_unknown_path(
+        self,
+        tmp_path: Path,
+        capsys,
+    ) -> None:
+        db_path = tmp_path / "source_cli.db"
+        hnsw_path = tmp_path / "hnsw" / "vectors.bin"
+        missing_path = tmp_path / "missing-source"
+
+        exit_code = cli_main(
+            [
+                "source",
+                "update",
+                str(missing_path),
+                "--db",
+                str(db_path),
+                "--hnsw",
+                str(hnsw_path),
+                "--category",
+                "Operations",
+            ]
+        )
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert (
+            f"source error: source root not found for path: {missing_path.resolve()}"
+            in captured.out
+        )
+
+    def test_cli_search_reports_backend_failure(
+        self,
+        indexed_search_env,
+        capsys,
+    ) -> None:
+        _, db_path, hnsw_path = indexed_search_env
+
+        with patch.object(
+            SearchService,
+            "search",
+            side_effect=SearchExecutionError("search backend failed"),
+        ):
+            exit_code = cli_main(
+                [
+                    "search",
+                    "项目进度",
+                    "--db",
+                    str(db_path),
+                    "--hnsw",
+                    str(hnsw_path),
+                ]
+            )
+
+        assert exit_code == 2
+        assert "Search error: search backend failed" in capsys.readouterr().out
+
+    def test_cli_source_add_rejects_overlapping_active_root(
+        self,
+        tmp_path: Path,
+        capsys,
+    ) -> None:
+        db_path = tmp_path / "source_cli.db"
+        hnsw_path = tmp_path / "hnsw" / "vectors.bin"
+        parent = tmp_path / "workspace"
+        nested = parent / "nested"
+        nested.mkdir(parents=True)
+
+        first_exit = cli_main(
+            [
+                "source",
+                "add",
+                str(parent),
+                "--db",
+                str(db_path),
+                "--hnsw",
+                str(hnsw_path),
+            ]
+        )
+        assert first_exit == 0
+        capsys.readouterr()
+
+        second_exit = cli_main(
+            [
+                "source",
+                "add",
+                str(nested),
+                "--db",
+                str(db_path),
+                "--hnsw",
+                str(hnsw_path),
+            ]
+        )
+
+        assert second_exit == 1
+        captured = capsys.readouterr()
+        assert "source root ownership must be disjoint" in captured.out
 
     def test_cli_status_reports_runtime_index_state(
         self,
@@ -196,6 +320,29 @@ class TestCliSearchSmoke:
                 "2026-03-01T00:00:00",
                 "--time-to",
                 "2026-03-20T23:59:59",
+            ]
+        )
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "zh_project_plan.md" in captured.out
+
+    def test_cli_search_supports_root_path_filter(
+        self,
+        indexed_search_env: tuple[Engine, Path, Path],
+        search_corpus: Path,
+        capsys,
+    ) -> None:
+        _, db_path, hnsw_path = indexed_search_env
+        exit_code = cli_main(
+            [
+                "search",
+                "项目",
+                "--db",
+                str(db_path),
+                "--hnsw",
+                str(hnsw_path),
+                "--root",
+                str(search_corpus.resolve()),
             ]
         )
         assert exit_code == 0
@@ -276,7 +423,7 @@ class TestCliSearchSmoke:
 
         with patch(
             "opendocs.app.search_service.EvidenceLocator.open_file",
-            return_value=True,
+            return_value=_build_action_result(),
         ) as open_mock:
             exit_code = cli_main(
                 [
@@ -293,10 +440,40 @@ class TestCliSearchSmoke:
 
         assert exit_code == 0
         captured = capsys.readouterr()
-        assert "Opened:" in captured.out
+        assert "Open request launched:" in captured.out
         _, kwargs = open_mock.call_args
         assert "char_range" in kwargs
         assert kwargs["char_range"]
+
+    def test_cli_search_open_result_branch_reports_launch_failure(
+        self, indexed_search_env: tuple[Engine, Path, Path], capsys
+    ) -> None:
+        _, db_path, hnsw_path = indexed_search_env
+
+        with patch(
+            "opendocs.app.search_service.EvidenceLocator.open_file",
+            return_value=_build_action_result(
+                status="launch_failed",
+                message="failed to launch external opener: boom",
+                error="boom",
+            ),
+        ):
+            exit_code = cli_main(
+                [
+                    "search",
+                    "项目进度",
+                    "--db",
+                    str(db_path),
+                    "--hnsw",
+                    str(hnsw_path),
+                    "--open",
+                    "1",
+                ]
+            )
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Open failed: failed to launch external opener: boom" in captured.out
 
     def test_cli_search_reports_schema_incompatibility(
         self,
@@ -341,7 +518,8 @@ class TestOpenDocument:
         # Mock the subprocess call to avoid actually opening files
         with patch("opendocs.retrieval.evidence_locator.subprocess.Popen"):
             result = search_service.open_evidence(resp.results[0].doc_id, resp.results[0].chunk_id)
-        assert result is True
+        assert result.status == "launched"
+        assert result.launched
 
     def test_open_document_nonexistent_file(self, search_service: SearchService) -> None:
         result = search_service.open_document(
@@ -349,7 +527,37 @@ class TestOpenDocument:
             paragraph_range="1-2",
             char_range="0-10",
         )
-        assert result is False
+        assert result.status == "missing_target"
+        assert not result.launched
+
+    def test_open_evidence_returns_unresolved_when_citation_is_unknown(
+        self, search_service: SearchService
+    ) -> None:
+        result = search_service.open_evidence("missing-doc", "missing-chunk")
+        assert result.status == "unresolved_evidence"
+        assert not result.launched
+
+    def test_open_evidence_returns_missing_target_when_file_disappears(
+        self,
+        indexed_search_env: tuple[Engine, Path, Path],
+    ) -> None:
+        engine, _, hnsw_path = indexed_search_env
+        search_service = SearchService(engine, hnsw_path=hnsw_path)
+        resp = search_service.search("项目进度")
+        assert len(resp.results) > 0
+
+        with session_scope(engine) as session:
+            absolute_path = session.execute(
+                text("SELECT path FROM documents WHERE doc_id = :doc_id"),
+                {"doc_id": resp.results[0].doc_id},
+            ).scalar_one()
+
+        Path(absolute_path).unlink()
+        result = search_service.open_evidence(resp.results[0].doc_id, resp.results[0].chunk_id)
+
+        assert result.status == "missing_target"
+        assert result.target_path == absolute_path
+        assert not result.launched
 
     def test_open_file_static_method(self, tmp_path: Path) -> None:
         test_file = tmp_path / "test.txt"
@@ -360,9 +568,10 @@ class TestOpenDocument:
                 paragraph_range="2-3",
                 char_range="5-9",
             )
-        assert result is True
+        assert result.status == "launched"
+        assert result.launched
 
-    def test_open_file_non_pdf_threads_locator_hints(self, tmp_path: Path) -> None:
+    def test_open_file_non_pdf_keeps_locator_hints_inside_app_preview(self, tmp_path: Path) -> None:
         doc_file = tmp_path / "note.md"
         doc_file.write_text("note")
         with patch("opendocs.retrieval.evidence_locator.subprocess.Popen") as open_mock:
@@ -371,16 +580,23 @@ class TestOpenDocument:
                 paragraph_range="2-3",
                 char_range="5-9",
             )
-        assert result is True
+        assert result.status == "launched"
+        assert result.external_target is not None
+        assert result.locator_hint_applied is False
         command = open_mock.call_args.args[0]
-        assert "#paragraph=2-3" in command[-1]
-        assert "char=5-9" in command[-1]
+        assert command[-1] == str(doc_file.resolve())
+        assert result.external_target == str(doc_file.resolve())
+        assert "#paragraph=2-3" not in command[-1]
+        assert "char=5-9" not in command[-1]
 
     def test_open_file_pdf_threads_page_hint(self, tmp_path: Path) -> None:
         pdf_file = tmp_path / "paper.pdf"
         pdf_file.write_text("fake pdf")
         with patch("opendocs.retrieval.evidence_locator.subprocess.Popen") as open_mock:
             result = EvidenceLocator.open_file(str(pdf_file), page_no=3, char_range="10-20")
-        assert result is True
+        assert result.status == "launched"
+        assert result.external_target is not None
+        assert result.locator_hint_applied is True
         command = open_mock.call_args.args[0]
         assert "#page=3" in command[-1]
+        assert "#page=3" in result.external_target

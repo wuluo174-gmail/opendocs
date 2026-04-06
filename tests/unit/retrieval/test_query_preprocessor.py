@@ -42,6 +42,10 @@ class TestSanitization:
         assert "*" not in result.fts_query
         assert "^" not in result.fts_query
 
+    def test_quote_punctuation_term_instead_of_splitting_it(self, prep: QueryPreprocessor) -> None:
+        result = prep.prepare("shared-needle")
+        assert result.fts_query == '"shared-needle"'
+
     def test_preserve_uppercase_or(self, prep: QueryPreprocessor) -> None:
         result = prep.prepare("report OR notes")
         assert result.fts_query == "report OR notes"
@@ -82,11 +86,13 @@ class TestSynonymExpansion:
             "roadmap",
             "Project Plan",
             "milestones",
+            "项目路线图",
         ]
         assert [variant.fts_query for variant in result.variants] == [
             "roadmap",
             "Project Plan",
             "milestones",
+            "项目路线图",
         ]
 
     def test_synonym_lookup_is_case_insensitive_for_latin_queries(
@@ -94,10 +100,29 @@ class TestSynonymExpansion:
         prep: QueryPreprocessor,
     ) -> None:
         result = prep.prepare("NLP")
-        assert [variant.text for variant in result.variants] == ["NLP", "自然语言处理"]
+        assert [variant.text for variant in result.variants] == [
+            "NLP",
+            "自然语言处理",
+            "language processing",
+        ]
+
+    def test_alias_cluster_expands_non_stage_chinese_variant_to_english_canonical(
+        self,
+        prep: QueryPreprocessor,
+    ) -> None:
+        result = prep.prepare("身份验证模块")
+        assert [variant.text for variant in result.variants] == [
+            "身份验证模块",
+            "authentication module",
+            "login system",
+            "登录系统",
+            "身份认证模块",
+        ]
 
     def test_custom_expansion_map_rejects_variant_that_duplicates_trigger(self) -> None:
-        with pytest.raises(ValueError, match="expansion duplicates trigger_query after normalization"):
+        with pytest.raises(
+            ValueError, match="expansion duplicates trigger_query after normalization"
+        ):
             QueryPreprocessor(expansions={"项目进度": (" 项目进度 ", "项目计划书")})
 
     def test_explicit_empty_expansion_map_disables_default_lexicon(self) -> None:
@@ -111,7 +136,9 @@ class TestSynonymExpansion:
         assert [variant.text for variant in result.variants] == ["NLP", "自然语言处理"]
 
     def test_custom_expansion_map_rejects_duplicate_normalized_keys(self) -> None:
-        with pytest.raises(ValueError, match="duplicate query expansion trigger after normalization"):
+        with pytest.raises(
+            ValueError, match="duplicate query expansion trigger after normalization"
+        ):
             QueryPreprocessor(
                 expansions={
                     "NLP": ("自然语言处理",),

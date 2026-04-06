@@ -10,7 +10,11 @@ from sqlalchemy.orm import Session
 
 from opendocs.retrieval.fts_searcher import FtsSearcher
 from opendocs.storage.db import build_sqlite_engine, init_db
-from opendocs.utils.path_facts import derive_directory_facts
+from opendocs.utils.path_facts import (
+    build_display_path,
+    derive_directory_facts,
+    derive_source_display_root,
+)
 
 
 @pytest.fixture()
@@ -28,13 +32,15 @@ def fts_env(tmp_path):
     with Session(engine) as session:
         session.execute(
             sa_text(
-                "INSERT INTO source_roots (source_root_id, path, label, exclude_rules_json, "
-                "recursive, is_active, created_at, updated_at) VALUES "
-                "(:sid, :path, :label, :rules, :recursive, :active, :created_at, :updated_at)"
+                "INSERT INTO source_roots (source_root_id, path, display_root, label, "
+                "exclude_rules_json, recursive, is_active, created_at, updated_at) VALUES "
+                "(:sid, :path, :display_root, :label, :rules, :recursive, :active, "
+                ":created_at, :updated_at)"
             ),
             {
                 "sid": source_root_id,
                 "path": "/test",
+                "display_root": derive_source_display_root("/test", source_root_id=source_root_id),
                 "label": "fts fixture",
                 "rules": "{}",
                 "recursive": 1,
@@ -45,17 +51,18 @@ def fts_env(tmp_path):
         )
         session.execute(
             sa_text(
-                "INSERT INTO documents (doc_id, path, relative_path, directory_path, "
-                "relative_directory_path, source_root_id, source_path, hash_sha256, "
-                "title, file_type, size_bytes, created_at, modified_at, parse_status, "
-                "tags_json, sensitivity, is_deleted_from_fs) VALUES "
-                "(:did, :p, :rp, :dp, :rdp, :src, :sp, :h, :t, :ft, :sz, :ca, :ma, "
-                ":ps, :tj, :s, :d)"
+                "INSERT INTO documents (doc_id, path, relative_path, display_path, "
+                "directory_path, relative_directory_path, source_root_id, source_path, "
+                "hash_sha256, title, file_type, size_bytes, created_at, modified_at, "
+                "parse_status, tags_json, sensitivity, is_deleted_from_fs) VALUES "
+                "(:did, :p, :rp, :display_path, :dp, :rdp, :src, :sp, :h, :t, :ft, :sz, "
+                ":ca, :ma, :ps, :tj, :s, :d)"
             ),
             {
                 "did": doc_id,
                 "p": "/test/doc.md",
                 "rp": "doc.md",
+                "display_path": build_display_path("test", "doc.md"),
                 "dp": derive_directory_facts("/test/doc.md", "doc.md")[0],
                 "rdp": derive_directory_facts("/test/doc.md", "doc.md")[1],
                 "src": source_root_id,
@@ -95,7 +102,7 @@ def fts_env(tmp_path):
                 "cid": chunk_id_2,
                 "did": doc_id,
                 "ci": 1,
-                "txt": "Weekly Status Report completed authentication module",
+                "txt": "Weekly Status Report completed authentication module shared-needle",
                 "cs": 31,
                 "ce": 80,
             },
@@ -119,6 +126,14 @@ class TestFtsSearcherTrigram:
         searcher = FtsSearcher()
         with Session(engine) as session:
             results = searcher.search(session, "authentication")
+        assert len(results) > 0
+        assert any(r[0] == cid2 for r in results)
+
+    def test_hyphenated_term_matches_without_query_crash(self, fts_env) -> None:
+        engine, _, _, cid2 = fts_env
+        searcher = FtsSearcher()
+        with Session(engine) as session:
+            results = searcher.search(session, "shared-needle")
         assert len(results) > 0
         assert any(r[0] == cid2 for r in results)
 

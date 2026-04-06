@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
@@ -13,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 _SCHEMA_OR_DB_ERROR_TOKENS = (
     "no such table",
-    "no such column",
     "has no column named",
     "no such index",
     "unknown tokenizer",
@@ -29,6 +29,9 @@ _MATCH_SYNTAX_ERROR_TOKENS = (
     "unterminated string",
     "syntax error near",
 )
+
+_NO_SUCH_COLUMN_RE = re.compile(r"no such column:\s*(.+)$", re.IGNORECASE)
+_KNOWN_FTS_SCHEMA_COLUMNS = frozenset({"chunk_id", "doc_id", "text", "rowid"})
 
 
 class FtsSearcher:
@@ -86,20 +89,26 @@ class FtsSearcher:
                     if current is None or score < current[1]:
                         merged[chunk_id] = (doc_id, score)
 
-            ranked = [
-                (chunk_id, doc_id, score)
-                for chunk_id, (doc_id, score) in merged.items()
-            ]
+            ranked = [(chunk_id, doc_id, score) for chunk_id, (doc_id, score) in merged.items()]
             ranked.sort(key=lambda row: row[2])
             return ranked[:limit]
         except Exception as exc:
             exc_msg = str(exc)
             exc_lower = exc_msg.lower()
+            missing_column = _missing_column_name(exc_msg)
+            if missing_column is not None:
+                if missing_column in _KNOWN_FTS_SCHEMA_COLUMNS:
+                    logger.error("FTS schema column error: %s", exc_msg)
+                    raise
+                logger.debug("FTS MATCH treated user token as column reference: %s", exc_msg)
+                return []
             if any(token in exc_lower for token in _SCHEMA_OR_DB_ERROR_TOKENS):
                 logger.error("FTS query error (not a match issue): %s", exc_msg)
                 raise
             if any(token in exc_lower for token in _MATCH_SYNTAX_ERROR_TOKENS):
-                logger.debug("FTS MATCH empty or syntax issue for %r: %s", prepared.variants, exc_msg)
+                logger.debug(
+                    "FTS MATCH empty or syntax issue for %r: %s", prepared.variants, exc_msg
+                )
                 return []
             logger.error("Unexpected FTS query error: %s", exc_msg)
             raise
@@ -139,3 +148,13 @@ class FtsSearcher:
 
         rows = session.execute(sql, params).fetchall()
         return [(row[0], row[1], float(row[2])) for row in rows]
+
+
+def _missing_column_name(message: str) -> str | None:
+    match = _NO_SUCH_COLUMN_RE.search(message)
+    if match is None:
+        return None
+    missing = match.group(1).strip().strip("'\"")
+    if "." in missing:
+        missing = missing.rsplit(".", 1)[-1]
+    return missing.casefold()

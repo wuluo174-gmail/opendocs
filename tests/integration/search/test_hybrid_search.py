@@ -7,10 +7,11 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
+from opendocs.app.index_service import IndexService
 from opendocs.app.search_service import SearchService
 from opendocs.indexing.hnsw_manager import HnswManager
 from opendocs.retrieval.embedder import LocalNgramEmbedder
-from opendocs.retrieval.query_lexicon import build_stage_query_lexicon_index
+from opendocs.retrieval.filters import SearchFilter
 from opendocs.retrieval.stage_golden_queries import (
     S4_EXPECTED_SYNONYM_QUERY_COUNT,
     load_s4_hybrid_search_queries,
@@ -36,16 +37,10 @@ class TestHybridSearch:
         paths = [r.citation.path for r in resp.results]
         assert any("zh_project_plan" in p for p in paths)
 
-    def test_short_en_dense_only(self, search_service: SearchService) -> None:
-        """2-char English query — FTS returns empty, dense should compensate."""
-        resp = search_service.search("AI")
-        assert len(resp.results) > 0
-        paths = [r.citation.path for r in resp.results]
-        assert any("mixed_tech_report" in p for p in paths)
-
-    def test_fullwidth_short_en_dense_only(self, search_service: SearchService) -> None:
-        """Fullwidth short English query must normalize onto the same dense path."""
-        resp = search_service.search("ＡＩ")
+    @pytest.mark.parametrize("query", ["AI", "ai", "ＡＩ"])
+    def test_short_en_dense_only(self, search_service: SearchService, query: str) -> None:
+        """2-char English query variants must share the same dense compensation path."""
+        resp = search_service.search(query)
         assert len(resp.results) > 0
         paths = [r.citation.path for r in resp.results]
         assert any("mixed_tech_report" in p for p in paths)
@@ -57,11 +52,59 @@ class TestHybridSearch:
         paths = [r.citation.path for r in resp.results]
         assert any("en_weekly_report" in p for p in paths)
 
+    def test_runtime_alias_cluster_lifts_non_stage_synonym_into_top3(
+        self,
+        search_service: SearchService,
+    ) -> None:
+        resp = search_service.search("身份验证模块", top_k=3)
+        paths = [r.citation.path for r in resp.results]
+        assert any("en_weekly_report" in p for p in paths)
+
     def test_mixed_language_query(self, search_service: SearchService) -> None:
         resp = search_service.search("machine learning")
         assert len(resp.results) > 0
         paths = [r.citation.path for r in resp.results]
         assert any("mixed_tech_report" in p for p in paths)
+
+    def test_hyphenated_query_does_not_crash_and_remains_searchable(
+        self,
+        indexed_search_env,
+        search_corpus: Path,
+    ) -> None:
+        engine, _, hnsw_path = indexed_search_env
+        hyphen_doc = search_corpus / "hyphenated_note.md"
+        hyphen_doc.write_text("# Shared\n\nshared-needle retrieval target", encoding="utf-8")
+
+        with session_scope(engine) as session:
+            source_root_id = session.execute(
+                text("SELECT source_root_id FROM source_roots ORDER BY path LIMIT 1")
+            ).scalar_one()
+
+        IndexService(engine, hnsw_path=hnsw_path).update_index_for_changes(source_root_id)
+        service = SearchService(engine, hnsw_path=hnsw_path)
+
+        resp = service.search("shared-needle", top_k=10)
+
+        assert len(resp.results) > 0
+        assert any("hyphenated_note" in result.path for result in resp.results)
+
+    def test_filtered_search_does_not_fall_back_to_ann_query(
+        self,
+        indexed_search_env,
+        monkeypatch,
+    ) -> None:
+        engine, _, hnsw_path = indexed_search_env
+        service = SearchService(engine, hnsw_path=hnsw_path)
+
+        def fail_ann_query(self, vector, k):  # pragma: no cover - fail-fast guard
+            raise AssertionError("filtered dense search must not call HNSW ANN query")
+
+        monkeypatch.setattr(HnswManager, "query", fail_ann_query)
+
+        resp = service.search("项目", filters=SearchFilter(file_types=["md"]))
+
+        assert len(resp.results) > 0
+        assert all(result.path.endswith(".md") for result in resp.results)
 
     def test_stage_synonym_queries_hit_expected_documents(
         self,
@@ -75,7 +118,6 @@ class TestHybridSearch:
         ]
 
         assert len(synonym_queries) == S4_EXPECTED_SYNONYM_QUERY_COUNT
-        assert len(synonym_queries) == len(build_stage_query_lexicon_index())
         for query, expect_doc in synonym_queries:
             resp = search_service.search(query, top_k=10)
             paths = [result.citation.path for result in resp.results]
@@ -149,6 +191,32 @@ class TestHybridSearch:
         assert row[0] == "ready"
         assert row[1] == LocalNgramEmbedder().fingerprint
         assert row[2] == "embedder_signature_changed"
+
+    def test_startup_repairs_missing_vector_sidecar(
+        self,
+        indexed_search_env,
+    ) -> None:
+        """Dense artifact must rebuild if the exact-score vector sidecar is missing."""
+        engine, _, hnsw_path = indexed_search_env
+        vectors_path = hnsw_path.with_suffix(".hnsw_vectors.npy")
+        assert vectors_path.exists()
+        vectors_path.unlink()
+
+        service = SearchService(engine, hnsw_path=hnsw_path)
+        resp = service.search("AI")
+
+        assert len(resp.results) > 0
+        assert any("mixed_tech_report" in r.citation.path for r in resp.results)
+        with session_scope(engine) as session:
+            row = session.execute(
+                text(
+                    "SELECT status, embedder_signature, last_reason "
+                    "FROM index_artifacts WHERE artifact_name = 'dense_hnsw'"
+                )
+            ).one()
+        assert row[0] == "ready"
+        assert row[1] == LocalNgramEmbedder().fingerprint
+        assert row[2] == "vectors_file_missing"
 
 
 class TestSearchResultStructure:
@@ -233,9 +301,7 @@ class TestRegressionTop10:
         match_queries, zero_queries = _load_stage_golden_queries()
         assert len(match_queries) > 0, "No stage golden queries loaded from JSON"
         assert sum(1 for query_type, _, _, _ in match_queries if query_type == "locating") == 5
-        assert sum(1 for query_type, _, _, _ in match_queries if query_type == "synonym") == (
-            len(build_stage_query_lexicon_index())
-        )
+        assert sum(1 for query_type, _, _, _ in match_queries if query_type == "synonym") == 5
 
         hits = 0
         total = 0

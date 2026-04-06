@@ -29,16 +29,18 @@ class StageFilterCase:
     sensitivity_levels: tuple[str, ...]
     time_range: tuple[datetime, datetime] | None
 
-    def build_filter(self, *, corpus_dir: Path, primary_source_root_id: str) -> SearchFilter:
+    def build_filter(self, *, corpus_dir: Path) -> SearchFilter:
         directory_prefixes = list(self.directory_prefixes_relative)
         directory_prefixes.extend(
             str((corpus_dir / relative_path).resolve())
             for relative_path in self.directory_prefixes_absolute
         )
-        source_root_ids = [primary_source_root_id] if self.use_primary_source_root else None
+        source_roots: list[str] = []
+        if self.use_primary_source_root:
+            source_roots.append(str(corpus_dir.resolve()))
         return SearchFilter(
+            source_roots=source_roots or None,
             directory_prefixes=directory_prefixes or None,
-            source_root_ids=source_root_ids,
             categories=list(self.categories) or None,
             tags=list(self.tags) or None,
             file_types=list(self.file_types) or None,
@@ -134,7 +136,9 @@ def load_s4_search_filter_cases() -> tuple[StageFilterCase, ...]:
         )
 
     if len(cases) != 3:
-        raise ValueError(f"S4 filter cases must contain exactly 3 acceptance groups, found {len(cases)}")
+        raise ValueError(
+            f"S4 filter cases must contain exactly 3 acceptance groups, found {len(cases)}"
+        )
     return tuple(cases)
 
 
@@ -201,12 +205,16 @@ def _validate_filter_case_against_expected_document(
         if expected_profile.file_type not in normalized:
             raise ValueError(f"S4 filter case file_type drift: {case_id}")
     if sensitivity_levels:
-        normalized = SearchFilter(sensitivity_levels=list(sensitivity_levels)).sensitivity_levels or []
+        normalized = (
+            SearchFilter(sensitivity_levels=list(sensitivity_levels)).sensitivity_levels or []
+        )
         if expected_profile.metadata.sensitivity not in normalized:
             raise ValueError(f"S4 filter case sensitivity drift: {case_id}")
     if time_range is not None:
         if expected_profile.modified_at is None:
-            raise ValueError(f"S4 filter case time_range references document without owned timestamp: {case_id}")
+            raise ValueError(
+                f"S4 filter case time_range references document without owned timestamp: {case_id}"
+            )
         if not (time_range[0] <= expected_profile.modified_at <= time_range[1]):
             raise ValueError(f"S4 filter case time_range drift: {case_id}")
 
@@ -221,6 +229,10 @@ def _validate_directory_filters(
 ) -> None:
     for prefix in prefixes:
         if prefix not in known_directories:
-            raise ValueError(f"S4 filter case references unknown directory in {field_name}: {case_id}")
-    if not any(expected_path == prefix or expected_path.startswith(f"{prefix}/") for prefix in prefixes):
+            raise ValueError(
+                f"S4 filter case references unknown directory in {field_name}: {case_id}"
+            )
+    if not any(
+        expected_path == prefix or expected_path.startswith(f"{prefix}/") for prefix in prefixes
+    ):
         raise ValueError(f"S4 filter case directory drift: {case_id}")

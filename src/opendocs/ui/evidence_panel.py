@@ -40,7 +40,7 @@ class EvidencePanel(QWidget):
         self.locator_label = QLabel("Locator: -", self)
         self.preview_text = QTextEdit(self)
         self.preview_text.setReadOnly(True)
-        self.locate_button = QPushButton("Locate Citation", self)
+        self.locate_button = QPushButton("Go To Citation", self)
         self.locate_button.setEnabled(False)
         self.locate_button.clicked.connect(self._emit_locate_requested)
         self.open_button = QPushButton("Open File", self)

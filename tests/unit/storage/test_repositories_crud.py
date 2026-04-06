@@ -31,7 +31,11 @@ from opendocs.storage.repositories import (
     RelationRepository,
     SourceRepository,
 )
-from opendocs.utils.path_facts import derive_directory_facts
+from opendocs.utils.path_facts import (
+    build_display_path,
+    derive_directory_facts,
+    derive_source_display_root,
+)
 from opendocs.utils.time import utcnow_naive
 
 
@@ -41,9 +45,11 @@ def _now() -> datetime:
 
 def _add_source_root(session: Session, *, path: str) -> SourceRootModel:
     now = _now()
+    source_root_id = str(uuid.uuid4())
     source_root = SourceRootModel(
-        source_root_id=str(uuid.uuid4()),
+        source_root_id=source_root_id,
         path=path,
+        display_root=derive_source_display_root(path, source_root_id=source_root_id),
         label="test source",
         exclude_rules_json={},
         recursive=True,
@@ -72,6 +78,7 @@ def _new_document(
         doc_id=str(uuid.uuid4()),
         path=path,
         relative_path=path.split("/")[-1],
+        display_path=build_display_path(path.split("/")[-2], path.split("/")[-1]),
         directory_path=directory_path,
         relative_directory_path=relative_directory_path,
         file_identity=file_identity,
@@ -131,18 +138,29 @@ def test_document_repository_get_by_file_identity(engine: Engine) -> None:
     with Session(engine) as session:
         repository = DocumentRepository(session)
         source_root = _add_source_root(session, path="C:/docs")
-        document = _new_document(
+        deleted_document = _new_document(
             "C:/docs/identity.md",
+            source_root_id=source_root.source_root_id,
+            file_identity="42:99",
+            is_deleted_from_fs=True,
+        )
+        active_document = _new_document(
+            "C:/docs/identity-active.md",
             source_root_id=source_root.source_root_id,
             file_identity="42:99",
         )
 
-        repository.create(document)
+        repository.create(deleted_document)
+        repository.create(active_document)
         session.commit()
 
         fetched = repository.get_by_file_identity("42:99")
         assert fetched is not None
-        assert fetched.doc_id == document.doc_id
+        assert fetched.doc_id == active_document.doc_id
+
+        fetched_deleted = repository.get_by_file_identity("42:99", include_deleted=True)
+        assert fetched_deleted is not None
+        assert fetched_deleted.doc_id == active_document.doc_id
 
 
 def test_source_repository_updates_default_metadata(engine: Engine) -> None:
@@ -295,6 +313,95 @@ def test_chunk_delete_by_doc_id(engine: Engine) -> None:
         session.commit()
         assert count == 3
         assert len(repository.list_by_document(document.doc_id)) == 0
+
+
+def test_chunk_repository_lists_chunk_ids_by_doc_ids(engine: Engine) -> None:
+    with Session(engine) as session:
+        source_root = _add_source_root(session, path="C:/docs")
+        active_document = _new_document(
+            "C:/docs/query-target.md",
+            source_root_id=source_root.source_root_id,
+        )
+        deleted_document = _new_document(
+            "C:/docs/query-deleted.md",
+            source_root_id=source_root.source_root_id,
+            is_deleted_from_fs=True,
+        )
+        DocumentRepository(session).create(active_document)
+        DocumentRepository(session).create(deleted_document)
+        session.flush()
+
+        repository = ChunkRepository(session)
+        active_chunk = _new_chunk(active_document.doc_id, chunk_index=0)
+        deleted_chunk = _new_chunk(deleted_document.doc_id, chunk_index=0)
+        repository.create(active_chunk)
+        repository.create(deleted_chunk)
+        session.commit()
+
+        fetched = repository.list_chunk_ids_by_doc_ids(
+            [active_document.doc_id, deleted_document.doc_id]
+        )
+
+        assert fetched == {active_chunk.chunk_id}
+
+
+def test_chunk_repository_load_search_records_batches_active_document_facts(engine: Engine) -> None:
+    with Session(engine) as session:
+        source_root = _add_source_root(session, path="C:/docs")
+        active_document = _new_document(
+            "C:/docs/search-active.md",
+            source_root_id=source_root.source_root_id,
+        )
+        deleted_document = _new_document(
+            "C:/docs/search-deleted.md",
+            source_root_id=source_root.source_root_id,
+            is_deleted_from_fs=True,
+        )
+        DocumentRepository(session).create(active_document)
+        DocumentRepository(session).create(deleted_document)
+        session.flush()
+
+        repository = ChunkRepository(session)
+        active_chunk = ChunkModel(
+            chunk_id=str(uuid.uuid4()),
+            doc_id=active_document.doc_id,
+            chunk_index=0,
+            text="active chunk text",
+            char_start=4,
+            char_end=21,
+            page_no=2,
+            paragraph_start=0,
+            paragraph_end=1,
+            heading_path="Intro",
+        )
+        deleted_chunk = ChunkModel(
+            chunk_id=str(uuid.uuid4()),
+            doc_id=deleted_document.doc_id,
+            chunk_index=0,
+            text="deleted chunk text",
+            char_start=0,
+            char_end=18,
+        )
+        repository.create(active_chunk)
+        repository.create(deleted_chunk)
+        session.commit()
+
+        fetched = repository.load_search_records([active_chunk.chunk_id, deleted_chunk.chunk_id])
+
+        assert set(fetched) == {active_chunk.chunk_id}
+        record = fetched[active_chunk.chunk_id]
+        assert record.chunk_id == active_chunk.chunk_id
+        assert record.doc_id == active_document.doc_id
+        assert record.text == "active chunk text"
+        assert record.char_start == 4
+        assert record.char_end == 21
+        assert record.page_no == 2
+        assert record.paragraph_start == 0
+        assert record.paragraph_end == 1
+        assert record.heading_path == "Intro"
+        assert record.title == active_document.title
+        assert record.display_path == active_document.display_path
+        assert record.modified_at == active_document.modified_at
 
 
 def test_knowledge_repository_crud(engine: Engine) -> None:

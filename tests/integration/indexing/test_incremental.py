@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 from sqlalchemy import text
@@ -9,9 +10,10 @@ from sqlalchemy.engine import Engine
 
 from opendocs.app.index_service import IndexService
 from opendocs.app.source_service import SourceService
-from opendocs.indexing.scanner import ScanResult
+from opendocs.indexing.scanner import ScanResult, _derive_file_identity
 from opendocs.storage.db import session_scope
 from opendocs.storage.repositories import AuditRepository
+from opendocs.utils.path_facts import build_display_path, derive_directory_facts
 
 # ---------------------------------------------------------------------------
 # TC-003: New file after indexing appears in search
@@ -214,8 +216,7 @@ class TestTC003:
         with session_scope(engine) as session:
             failed_doc_row = session.execute(
                 text(
-                    "SELECT parse_status, hash_sha256, indexed_at "
-                    "FROM documents WHERE path = :path"
+                    "SELECT parse_status, hash_sha256, indexed_at FROM documents WHERE path = :path"
                 ),
                 {"path": str(target)},
             ).one()
@@ -234,8 +235,7 @@ class TestTC003:
         with session_scope(engine) as session:
             doc_row = session.execute(
                 text(
-                    "SELECT parse_status, hash_sha256, indexed_at "
-                    "FROM documents WHERE path = :path"
+                    "SELECT parse_status, hash_sha256, indexed_at FROM documents WHERE path = :path"
                 ),
                 {"path": str(target)},
             ).one()
@@ -404,8 +404,6 @@ class TestTC004:
                 source_root_id=source.source_root_id,
                 source_root_path=str(corpus_copy),
                 included=[],
-                excluded_paths=[],
-                unsupported_paths=[],
                 errors=[(str(target), "permission denied")],
                 duration_sec=0.01,
             )
@@ -571,4 +569,104 @@ class TestTC004:
         assert new_lineage[2] == str(original)
         assert new_lineage[3] is not None
         assert new_lineage[3] != before[3]
+        assert new_lineage[4] == 0
+
+    def test_deleted_lineage_does_not_resurrect_when_file_identity_is_reused(
+        self,
+        source_service: SourceService,
+        index_service: IndexService,
+        engine: Engine,
+        corpus_copy: Path,
+    ) -> None:
+        source = source_service.add_source(corpus_copy)
+
+        new_path = (corpus_copy / "identity_reused_new.md").resolve()
+        new_path.write_text("# Fresh\n\nUNIQUE_IDENTITY_REUSE_001", encoding="utf-8")
+        stat_result = new_path.stat()
+        file_identity = _derive_file_identity(stat_result)
+        assert file_identity is not None
+
+        old_path = (corpus_copy / "identity_reused_old.md").resolve()
+        old_relative_path = old_path.relative_to(corpus_copy.resolve()).as_posix()
+        old_directory_path, old_relative_directory_path = derive_directory_facts(
+            str(old_path),
+            old_relative_path,
+        )
+        old_doc_id = str(uuid.uuid4())
+
+        with session_scope(engine) as session:
+            session.execute(
+                text(
+                    "INSERT INTO documents ("
+                    "doc_id, path, relative_path, display_path, directory_path, "
+                    "relative_directory_path, file_identity, source_root_id, source_path, "
+                    "source_config_rev, hash_sha256, title, file_type, size_bytes, "
+                    "created_at, modified_at, indexed_at, parse_status, category, "
+                    "tags_json, sensitivity, is_deleted_from_fs"
+                    ") VALUES ("
+                    ":doc_id, :path, :relative_path, :display_path, :directory_path, "
+                    ":relative_directory_path, :file_identity, :source_root_id, :source_path, "
+                    ":source_config_rev, :hash_sha256, :title, :file_type, :size_bytes, "
+                    ":created_at, :modified_at, :indexed_at, :parse_status, :category, "
+                    ":tags_json, :sensitivity, :is_deleted_from_fs"
+                    ")"
+                ),
+                {
+                    "doc_id": old_doc_id,
+                    "path": str(old_path),
+                    "relative_path": old_relative_path,
+                    "display_path": build_display_path(source.display_root, old_relative_path),
+                    "directory_path": old_directory_path,
+                    "relative_directory_path": old_relative_directory_path,
+                    "file_identity": file_identity,
+                    "source_root_id": source.source_root_id,
+                    "source_path": str(old_path),
+                    "source_config_rev": 1,
+                    "hash_sha256": "a" * 64,
+                    "title": "old deleted lineage",
+                    "file_type": "md",
+                    "size_bytes": 10,
+                    "created_at": "2026-03-01 00:00:00",
+                    "modified_at": "2026-03-01 00:00:00",
+                    "indexed_at": "2026-03-01 00:00:00",
+                    "parse_status": "success",
+                    "category": None,
+                    "tags_json": "[]",
+                    "sensitivity": "internal",
+                    "is_deleted_from_fs": 1,
+                },
+            )
+
+        result = index_service.update_index_for_changes(source.source_root_id)
+        new_results = [item for item in result.results if Path(item.path).resolve() == new_path]
+        assert len(new_results) == 1
+        assert new_results[0].status == "success"
+        assert new_results[0].doc_id != old_doc_id
+
+        with session_scope(engine) as session:
+            old_lineage = session.execute(
+                text(
+                    "SELECT doc_id, path, source_path, file_identity, is_deleted_from_fs "
+                    "FROM documents WHERE doc_id = :doc_id"
+                ),
+                {"doc_id": old_doc_id},
+            ).one()
+            new_lineage = session.execute(
+                text(
+                    "SELECT doc_id, path, source_path, file_identity, is_deleted_from_fs "
+                    "FROM documents WHERE path = :path AND is_deleted_from_fs = 0"
+                ),
+                {"path": str(new_path)},
+            ).one()
+
+        assert old_lineage[0] == old_doc_id
+        assert old_lineage[1] == str(old_path)
+        assert old_lineage[2] == str(old_path)
+        assert old_lineage[3] == file_identity
+        assert old_lineage[4] == 1
+
+        assert new_lineage[0] != old_doc_id
+        assert new_lineage[1] == str(new_path)
+        assert new_lineage[2] == str(new_path)
+        assert new_lineage[3] == file_identity
         assert new_lineage[4] == 0

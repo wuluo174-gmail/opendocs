@@ -36,6 +36,10 @@ class TestTC001:
         assert reloaded is not None
         assert reloaded.path == str(corpus_copy)
 
+        reloaded_by_path = source_service.get_source_by_path(corpus_copy)
+        assert reloaded_by_path is not None
+        assert reloaded_by_path.source_root_id == source.source_root_id
+
     def test_add_source_idempotent(self, source_service: SourceService, corpus_copy: Path) -> None:
         s1 = source_service.add_source(corpus_copy)
         s2 = source_service.add_source(corpus_copy)
@@ -115,6 +119,24 @@ class TestTC001:
         assert updated.exclude_rules_json["exclude_dirs"] == ["__pycache__", ".git"]
         assert updated.exclude_rules_json["max_size_bytes"] == 123
 
+    def test_update_source_by_path_updates_config(
+        self, source_service: SourceService, corpus_copy: Path
+    ) -> None:
+        source_service.add_source(corpus_copy, label="before")
+
+        updated = source_service.update_source_by_path(
+            corpus_copy,
+            label="after",
+            exclude_rules={
+                "ignore_hidden": False,
+                "exclude_globs": ["*.tmp"],
+            },
+        )
+
+        assert updated.label == "after"
+        assert updated.exclude_rules_json["ignore_hidden"] is False
+        assert updated.exclude_rules_json["exclude_globs"] == ["*.tmp"]
+
     def test_update_source_reindexes_existing_documents(
         self,
         source_service: SourceService,
@@ -135,10 +157,7 @@ class TestTC001:
 
         with session_scope(engine) as session:
             before_row = session.execute(
-                text(
-                    "SELECT category, tags_json, sensitivity "
-                    "FROM documents WHERE path = :path"
-                ),
+                text("SELECT category, tags_json, sensitivity FROM documents WHERE path = :path"),
                 {"path": target_path},
             ).one()
 
@@ -161,10 +180,7 @@ class TestTC001:
 
         with session_scope(engine) as session:
             after_row = session.execute(
-                text(
-                    "SELECT category, tags_json, sensitivity "
-                    "FROM documents WHERE path = :path"
-                ),
+                text("SELECT category, tags_json, sensitivity FROM documents WHERE path = :path"),
                 {"path": target_path},
             ).one()
             incremental_audits = session.execute(
@@ -190,6 +206,38 @@ class TestTC001:
 
         with pytest.raises(SourceNotFoundError, match="not readable"):
             source_service.add_source(corpus_copy)
+
+    def test_add_source_rejects_nested_active_root(
+        self,
+        source_service: SourceService,
+        tmp_path: Path,
+    ) -> None:
+        from opendocs.exceptions import SourceOverlapError
+
+        parent = tmp_path / "workspace"
+        nested = parent / "nested"
+        nested.mkdir(parents=True)
+
+        source_service.add_source(parent)
+
+        with pytest.raises(SourceOverlapError, match="ownership must be disjoint"):
+            source_service.add_source(nested)
+
+    def test_add_source_rejects_parent_of_existing_active_root(
+        self,
+        source_service: SourceService,
+        tmp_path: Path,
+    ) -> None:
+        from opendocs.exceptions import SourceOverlapError
+
+        parent = tmp_path / "workspace"
+        nested = parent / "nested"
+        nested.mkdir(parents=True)
+
+        source_service.add_source(nested)
+
+        with pytest.raises(SourceOverlapError, match="ownership must be disjoint"):
+            source_service.add_source(parent)
 
     def test_scan_source_stats(self, source_service: SourceService, corpus_copy: Path) -> None:
         source = source_service.add_source(corpus_copy)
@@ -267,6 +315,73 @@ class TestTC001:
         error_summary = json.loads(scan_run[5])
         assert error_summary == [
             {"path": str(corpus_copy), "error": "RuntimeError: scanner exploded"}
+        ]
+
+        failure_audits = [audit for audit in audits if audit.operation == "scan_source"]
+        assert len(failure_audits) == 1
+        assert failure_audits[0].result == "failure"
+        assert failure_audits[0].target_id == scan_run[0]
+        assert failure_audits[0].detail_json["error_summary"] == error_summary
+
+        audit_jsonl = work_dir / "logs" / "audit.jsonl"
+        assert audit_jsonl.exists()
+        scan_events = [
+            json.loads(line)
+            for line in audit_jsonl.read_text(encoding="utf-8").strip().splitlines()
+            if '"operation": "scan_source"' in line
+        ]
+        assert any(
+            event["result"] == "failure"
+            and event["target_id"] == scan_run[0]
+            and event["detail"]["error_summary"] == error_summary
+            for event in scan_events
+        )
+
+    def test_scan_source_root_corruption_is_failed_not_completed(
+        self,
+        source_service: SourceService,
+        engine: Engine,
+        corpus_copy: Path,
+        work_dir: Path,
+    ) -> None:
+        from opendocs.exceptions import SourceNotFoundError
+
+        source = source_service.add_source(corpus_copy)
+        backup_root = corpus_copy.with_name(f"{corpus_copy.name}_backup")
+        corpus_copy.rename(backup_root)
+        corpus_copy.write_text("not a directory anymore", encoding="utf-8")
+
+        with pytest.raises(SourceNotFoundError, match="source root scan failed"):
+            source_service.scan_source(source.source_root_id)
+
+        with session_scope(engine) as session:
+            scan_run = session.execute(
+                text(
+                    "SELECT scan_run_id, trace_id, status, finished_at, failed_count, "
+                    "error_summary_json "
+                    "FROM scan_runs WHERE source_root_id = :source_root_id "
+                    "ORDER BY started_at DESC LIMIT 1"
+                ),
+                {"source_root_id": source.source_root_id},
+            ).one()
+            audits = AuditRepository(session).query(
+                target_type="index_run",
+                trace_id=scan_run[1],
+            )
+
+        assert scan_run[2] == "failed"
+        assert scan_run[3] is not None
+        assert scan_run[4] == 1
+        error_summary = json.loads(scan_run[5])
+        assert error_summary == [
+            {
+                "path": str(corpus_copy.resolve()),
+                "error": (
+                    "SourceNotFoundError: "
+                    f"source root scan failed: {corpus_copy.resolve()}: "
+                    f"[Errno 20] Not a directory: '{corpus_copy.resolve()}'"
+                ),
+            }
         ]
 
         failure_audits = [audit for audit in audits if audit.operation == "scan_source"]
@@ -444,6 +559,31 @@ class TestTC001:
         assert ".hidden_file.txt" in scan_result.excluded_paths
         assert "oversized.txt" in scan_result.excluded_paths
 
+    def test_excluded_directory_is_counted_as_a_scan_decision(
+        self, source_service: SourceService, corpus_copy: Path
+    ) -> None:
+        blocked_dir = corpus_copy / "archive"
+        blocked_dir.mkdir()
+        (blocked_dir / "inside.txt").write_text("should stay unscanned", encoding="utf-8")
+
+        source = source_service.add_source(
+            corpus_copy,
+            exclude_rules=ExcludeRules(exclude_dirs=["__pycache__", ".git", "archive"]),
+        )
+        scan_result, _ = source_service.scan_source(source.source_root_id)
+
+        included_rel = {item.relative_path for item in scan_result.included}
+        assert "archive/inside.txt" not in included_rel
+        assert "archive" in scan_result.excluded_paths
+        assert scan_result.excluded_count == 2  # legacy .doc + excluded directory
+
+        archive_decisions = [
+            entry for entry in scan_result.excluded_entries if entry.path == "archive"
+        ]
+        assert len(archive_decisions) == 1
+        assert archive_decisions[0].kind == "directory"
+        assert archive_decisions[0].reason == "excluded_dir"
+
 
 # ---------------------------------------------------------------------------
 # TC-002: Unsupported and failed files don't crash batch
@@ -560,3 +700,9 @@ class TestTC002:
         assert doc_in_excluded, (
             f"legacy_format.doc not found in excluded_paths: {scan_result.excluded_paths}"
         )
+        unsupported_entries = [
+            entry for entry in scan_result.unsupported_entries if entry.path == "legacy_format.doc"
+        ]
+        assert len(unsupported_entries) == 1
+        assert unsupported_entries[0].kind == "file"
+        assert unsupported_entries[0].reason == "unsupported_format"

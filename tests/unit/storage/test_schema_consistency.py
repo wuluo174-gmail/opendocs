@@ -19,7 +19,11 @@ from pathlib import Path
 
 from opendocs.domain.models import Base
 from opendocs.storage.db import init_db
-from opendocs.utils.path_facts import derive_directory_facts
+from opendocs.utils.path_facts import (
+    build_display_path,
+    derive_directory_facts,
+    derive_source_display_root,
+)
 
 
 def test_all_orm_tables_exist_after_migrations(db_path: Path) -> None:
@@ -93,8 +97,10 @@ def test_orm_indexes_match_migration_indexes(db_path: Path) -> None:
         ).fetchall()
 
         # Parse index columns from CREATE INDEX sql: ... ON table (col1, col2, ...)
+        # Partial indexes end with a WHERE clause, so the column list must be
+        # extracted from the ON (...) segment instead of the SQL tail.
         db_indexes: dict[str, list[str]] = {}
-        col_pattern = re.compile(r"\(([^)]+)\)\s*$")
+        col_pattern = re.compile(r"ON\s+\w+\s*\(([^)]+)\)", re.IGNORECASE)
         for name, sql in rows:
             if sql is None:
                 continue
@@ -270,11 +276,13 @@ def test_fts_trigger_syncs_chunks_to_chunk_fts(db_path: Path) -> None:
         doc_id = str(uuid.uuid4())
         source_root_id = str(uuid.uuid4())
         connection.execute(
-            "INSERT INTO source_roots (source_root_id, path, label, exclude_rules_json, "
-            "recursive, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO source_roots (source_root_id, path, display_root, label, "
+            "exclude_rules_json, recursive, is_active, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 source_root_id,
                 "/test",
+                derive_source_display_root("/test", source_root_id=source_root_id),
                 "test source",
                 "{}",
                 1,
@@ -284,14 +292,16 @@ def test_fts_trigger_syncs_chunks_to_chunk_fts(db_path: Path) -> None:
             ),
         )
         connection.execute(
-            "INSERT INTO documents (doc_id, path, relative_path, directory_path, "
-            "relative_directory_path, source_root_id, source_path, hash_sha256, title, "
-            "file_type, size_bytes, created_at, modified_at, parse_status, tags_json, "
-            "sensitivity, is_deleted_from_fs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO documents (doc_id, path, relative_path, display_path, "
+            "directory_path, relative_directory_path, source_root_id, source_path, "
+            "hash_sha256, title, file_type, size_bytes, created_at, modified_at, "
+            "parse_status, tags_json, sensitivity, is_deleted_from_fs) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 doc_id,
                 f"/test/{doc_id}.md",
                 f"{doc_id}.md",
+                build_display_path("test", f"{doc_id}.md"),
                 derive_directory_facts(f"/test/{doc_id}.md", f"{doc_id}.md")[0],
                 derive_directory_facts(f"/test/{doc_id}.md", f"{doc_id}.md")[1],
                 source_root_id,

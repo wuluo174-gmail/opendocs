@@ -17,22 +17,22 @@ from opendocs.domain.models import (
     ScanRunModel,
     SourceRootModel,
 )
-from opendocs.exceptions import OpenDocsError, SourceNotFoundError
+from opendocs.exceptions import OpenDocsError, SourceNotFoundError, SourceOverlapError
 from opendocs.indexing.scanner import ExcludeRules, Scanner, ScanResult
 from opendocs.parsers import create_default_registry
 from opendocs.storage.db import session_scope
 from opendocs.storage.repositories import ScanRunRepository, SourceRepository
 from opendocs.storage.repositories.source_repository import INDEX_RELEVANT_SOURCE_FIELDS
+from opendocs.utils.path_facts import derive_source_display_root
 from opendocs.utils.time import utcnow_naive
 
 _UNSET = object()
 
 
 @dataclass(frozen=True)
-class _PreparedScan:
+class _ScanRequest:
     source_root_id: str
     source_root_path: str
-    root_path: Path
     recursive: bool
     rules: ExcludeRules
     trace_id: str
@@ -82,7 +82,9 @@ class SourceService:
                         recursive,
                     ),
                 )
-                changed = repo.update(existing, **update_plan.updates) if update_plan.updates else False
+                changed = (
+                    repo.update(existing, **update_plan.updates) if update_plan.updates else False
+                )
                 source = existing
                 if changed:
                     if update_plan.requires_reindex:
@@ -98,11 +100,18 @@ class SourceService:
                         trace_id=str(uuid.uuid4()),
                     )
             else:
+                self._ensure_disjoint_active_source_roots(repo, resolved)
                 rules = self._coerce_exclude_rules(exclude_rules)
                 defaults = self._coerce_default_metadata(default_metadata)
+                source_root_id = str(uuid.uuid4())
                 source = SourceRootModel(
-                    source_root_id=str(uuid.uuid4()),
+                    source_root_id=source_root_id,
                     path=str(resolved),
+                    display_root=self._allocate_display_root(
+                        repo,
+                        path=str(resolved),
+                        source_root_id=source_root_id,
+                    ),
                     label=None if label is _UNSET else label,
                     exclude_rules_json=rules.model_dump(),  # type: ignore[assignment]
                     default_category=defaults.category,
@@ -181,9 +190,37 @@ class SourceService:
 
         return source
 
+    def update_source_by_path(
+        self,
+        path: str | Path,
+        *,
+        label: str | None | object = _UNSET,
+        exclude_rules: ExcludeRules | dict[str, object] | None | object = _UNSET,
+        default_metadata: DocumentMetadata | dict[str, object] | None | object = _UNSET,
+        recursive: bool | object = _UNSET,
+        reindex_on_change: bool = True,
+    ) -> SourceRootModel:
+        """Update an existing source root using the user-owned source path."""
+        source = self.get_source_by_path(path)
+        if source is None:
+            resolved = self._resolve_source_path(path)
+            raise SourceNotFoundError(f"source root not found for path: {resolved}")
+        return self.update_source(
+            source.source_root_id,
+            label=label,
+            exclude_rules=exclude_rules,
+            default_metadata=default_metadata,
+            recursive=recursive,
+            reindex_on_change=reindex_on_change,
+        )
+
+    @staticmethod
+    def _resolve_source_path(path: str | Path) -> Path:
+        return Path(path).expanduser().resolve()
+
     @staticmethod
     def _require_readable_directory(path: str | Path) -> Path:
-        resolved = Path(path).expanduser().resolve()
+        resolved = SourceService._resolve_source_path(path)
         if not resolved.exists() or not resolved.is_dir():
             raise SourceNotFoundError(f"path does not exist or is not a directory: {resolved}")
         if not os.access(resolved, os.R_OK | os.X_OK):
@@ -196,6 +233,22 @@ class SourceService:
         except OSError as exc:
             raise SourceNotFoundError(f"path is not readable: {resolved}") from exc
         return resolved
+
+    @staticmethod
+    def _ensure_disjoint_active_source_roots(
+        repo: SourceRepository,
+        candidate_path: Path,
+    ) -> None:
+        candidate = candidate_path.resolve()
+        for source in repo.list_active():
+            existing = Path(source.path).resolve()
+            if existing == candidate:
+                continue
+            if candidate.is_relative_to(existing) or existing.is_relative_to(candidate):
+                raise SourceOverlapError(
+                    "source root ownership must be disjoint; "
+                    f"{candidate} overlaps active source root {existing}"
+                )
 
     @staticmethod
     def _coerce_exclude_rules(
@@ -232,6 +285,20 @@ class SourceService:
         if recursive is not _UNSET:
             updates["recursive"] = recursive
         return updates
+
+    @staticmethod
+    def _allocate_display_root(
+        repo: SourceRepository,
+        *,
+        path: str,
+        source_root_id: str,
+    ) -> str:
+        occupied = {source.display_root for source in repo.list_all()}
+        return derive_source_display_root(
+            path,
+            source_root_id=source_root_id,
+            occupied_roots=occupied,
+        )
 
     @staticmethod
     def _plan_source_update(
@@ -271,16 +338,18 @@ class SourceService:
 
     def scan_source(self, source_root_id: str) -> tuple[ScanResult, ScanRunModel]:
         """Scan a source root. Returns (ScanResult, ScanRunModel) for TC-001."""
-        request = self._prepare_scan(source_root_id)
+        request = self._load_scan_request(source_root_id)
         scan_run = self._create_running_scan_run(request)
 
         try:
             scan_result = self._scanner.scan(
-                request.root_path,
+                Path(request.source_root_path),
                 source_root_id=request.source_root_id,
                 exclude_rules=request.rules,
                 recursive=request.recursive,
             )
+            if scan_result.has_root_failure:
+                raise self._root_failure_to_exception(scan_result)
         except Exception as exc:
             failed_run, failure_audit = self._persist_scan_failure(
                 request=request,
@@ -298,27 +367,21 @@ class SourceService:
         flush_audit_to_jsonl(success_audit)
         return scan_result, completed_run
 
-    def _prepare_scan(self, source_root_id: str) -> _PreparedScan:
+    def _load_scan_request(self, source_root_id: str) -> _ScanRequest:
         trace_id = str(uuid.uuid4())
         with session_scope(self._engine) as session:
             source = SourceRepository(session).get_by_id(source_root_id)
             if source is None:
                 raise SourceNotFoundError(f"source root not found: {source_root_id}")
-
-            root_path = Path(source.path)
-            if not root_path.exists():
-                raise SourceNotFoundError(f"source path no longer exists: {source.path}")
-
-            return _PreparedScan(
+            return _ScanRequest(
                 source_root_id=source_root_id,
                 source_root_path=source.path,
-                root_path=root_path,
                 recursive=source.recursive,
                 rules=ExcludeRules.model_validate(source.exclude_rules_json or {}),
                 trace_id=trace_id,
             )
 
-    def _create_running_scan_run(self, request: _PreparedScan) -> ScanRunModel:
+    def _create_running_scan_run(self, request: _ScanRequest) -> ScanRunModel:
         with session_scope(self._engine) as session:
             scan_run = ScanRunModel(
                 scan_run_id=str(uuid.uuid4()),
@@ -332,7 +395,7 @@ class SourceService:
     def _persist_scan_success(
         self,
         *,
-        request: _PreparedScan,
+        request: _ScanRequest,
         scan_run_id: str,
         scan_result: ScanResult,
     ) -> tuple[ScanRunModel, AuditLogModel]:
@@ -371,7 +434,7 @@ class SourceService:
     def _persist_scan_failure(
         self,
         *,
-        request: _PreparedScan,
+        request: _ScanRequest,
         scan_run_id: str,
         error: Exception,
     ) -> tuple[ScanRunModel, AuditLogModel]:
@@ -429,6 +492,13 @@ class SourceService:
             return type(error).__name__
         return f"{type(error).__name__}: {message}"
 
+    @staticmethod
+    def _root_failure_to_exception(scan_result: ScanResult) -> SourceNotFoundError:
+        if scan_result.root_error is None:
+            raise OpenDocsError("root failure exception requested without root_error")
+        path, error = scan_result.root_error
+        return SourceNotFoundError(f"source root scan failed: {path}: {error}")
+
     def list_sources(self) -> list[SourceRootModel]:
         with session_scope(self._engine) as session:
             return SourceRepository(session).list_active()
@@ -436,3 +506,8 @@ class SourceService:
     def get_source(self, source_root_id: str) -> SourceRootModel | None:
         with session_scope(self._engine) as session:
             return SourceRepository(session).get_by_id(source_root_id)
+
+    def get_source_by_path(self, path: str | Path) -> SourceRootModel | None:
+        resolved = self._resolve_source_path(path)
+        with session_scope(self._engine) as session:
+            return SourceRepository(session).get_by_path(str(resolved))
