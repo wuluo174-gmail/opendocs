@@ -3,7 +3,7 @@ CREATE TABLE index_artifacts (
         artifact_name IN ('dense_hnsw')
     ),
     status TEXT NOT NULL DEFAULT 'stale' CHECK (
-        status IN ('stale', 'ready', 'building', 'failed')
+        status IN ('stale', 'ready', 'failed')
     ),
     artifact_path TEXT NOT NULL,
     embedder_model TEXT NOT NULL,

@@ -70,9 +70,67 @@ class TestFailureIsolation:
         assert result.file_type == "txt"
         assert result.raw_text == ""
         assert result.paragraphs == []
-        assert result.error_info == "empty file"
         assert result.error is not None
-        assert result.error.code == "empty_file"
+        assert result.error.code == "no_extractable_text"
+        assert result.error.details["parser"] == "TxtParser"
+
+    def test_whitespace_only_txt_returns_failed(self, tmp_path: Path) -> None:
+        registry = create_default_registry()
+        p = tmp_path / "blank.txt"
+        p.write_text(" \n\t \n", encoding="utf-8")
+
+        result = registry.parse(p)
+
+        assert result.parse_status == "failed"
+        assert result.raw_text == ""
+        assert result.paragraphs == []
+        assert result.error is not None
+        assert result.error.code == "no_extractable_text"
+        assert result.error.details["parser"] == "TxtParser"
+
+    def test_whitespace_only_markdown_returns_failed(self, tmp_path: Path) -> None:
+        registry = create_default_registry()
+        p = tmp_path / "blank.md"
+        p.write_text("  \n\n\t\n", encoding="utf-8")
+
+        result = registry.parse(p)
+
+        assert result.parse_status == "failed"
+        assert result.raw_text == ""
+        assert result.paragraphs == []
+        assert result.error is not None
+        assert result.error.code == "no_extractable_text"
+        assert result.error.details["parser"] == "MdParser"
+
+    def test_whitespace_only_docx_returns_failed(self, tmp_path: Path) -> None:
+        docx = pytest.importorskip("docx")
+        Document = docx.Document  # type: ignore[attr-defined]
+        registry = create_default_registry()
+        doc = Document()
+        doc.add_paragraph("   ")
+        p = tmp_path / "blank.docx"
+        doc.save(str(p))
+
+        result = registry.parse(p)
+
+        assert result.parse_status == "failed"
+        assert result.raw_text == ""
+        assert result.paragraphs == []
+        assert result.error is not None
+        assert result.error.code == "no_extractable_text"
+        assert result.error.details["parser"] == "DocxParser"
+
+    def test_direct_parser_and_registry_share_same_final_contract(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        p = tmp_path / "blank.txt"
+        p.write_text("", encoding="utf-8")
+
+        direct = TxtParser().parse(p)
+        via_registry = create_default_registry().parse(p)
+
+        assert direct.model_dump() == via_registry.model_dump()
 
     def test_missing_file_no_exception(self, tmp_path: Path) -> None:
         registry = create_default_registry()

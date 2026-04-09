@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from opendocs.app.index_service import IndexService
+from opendocs.app.runtime import OpenDocsRuntime
 from opendocs.app.search_service import SearchService
 from opendocs.app.source_service import SourceService
 from opendocs.retrieval.filters import SearchFilter
@@ -13,9 +13,8 @@ from opendocs.storage.db import build_sqlite_engine, init_db
 
 
 class TestFilterCombinations:
-    def test_stage_filter_cases(self, indexed_search_env, search_corpus) -> None:
-        engine, _, hnsw_path = indexed_search_env
-        service = SearchService(engine, hnsw_path=hnsw_path)
+    def test_stage_filter_cases(self, indexed_search_env, search_corpus, search_runtime) -> None:
+        service = search_runtime.build_search_service()
 
         for filter_case in load_s4_search_filter_cases():
             resp = service.search(
@@ -68,21 +67,25 @@ class TestFilterCombinations:
         hnsw_path = tmp_path / "hnsw" / "multi_root.hnsw"
         hnsw_path.parent.mkdir(parents=True, exist_ok=True)
 
-        source_service = SourceService(engine)
+        runtime = OpenDocsRuntime(engine, hnsw_path=hnsw_path)
+        source_service = SourceService(engine, runtime=runtime)
         source_a = source_service.add_source(root_a)
         source_b = source_service.add_source(tmp_path / "root_b")
-        index_service = IndexService(engine, hnsw_path=hnsw_path)
+        index_service = runtime.build_index_service()
         index_service.full_index_source(source_a.source_root_id)
         index_service.full_index_source(source_b.source_root_id)
-        service = SearchService(engine, hnsw_path=hnsw_path)
+        service = runtime.build_search_service()
 
-        resp = service.search(
-            "shared-needle",
-            filters=SearchFilter(
-                source_roots=[str(root_a.resolve())],
-                directory_prefixes=["projects/alpha"],
-            ),
-        )
+        try:
+            resp = service.search(
+                "shared-needle",
+                filters=SearchFilter(
+                    source_roots=[str(root_a.resolve())],
+                    directory_prefixes=["projects/alpha"],
+                ),
+            )
+        finally:
+            runtime.close()
 
         assert len(resp.results) > 0
         assert all(result.path.startswith("root_a/") for result in resp.results)

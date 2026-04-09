@@ -73,8 +73,10 @@ class TestMdParser:
 
     def test_empty_file(self, tmp_md_empty: Path) -> None:
         result = self.parser.parse(tmp_md_empty)
-        assert result.parse_status == "success"
+        assert result.parse_status == "failed"
         assert result.paragraphs == []
+        assert result.error is not None
+        assert result.error.code == "no_extractable_text"
 
     def test_fenced_code_block_not_heading(self, tmp_path: Path) -> None:
         """Lines starting with # inside fenced code blocks are not headings."""
@@ -239,3 +241,14 @@ class TestMdParser:
         for pp in result.paragraphs:
             if pp.heading_path:
                 assert "##" not in pp.heading_path
+
+    def test_whitespace_only_markdown_is_failed(self, tmp_path: Path) -> None:
+        p = tmp_path / "blank.md"
+        p.write_text(" \n\n\t\n", encoding="utf-8")
+
+        result = self.parser.parse(p)
+
+        assert result.parse_status == "failed"
+        assert result.paragraphs == []
+        assert result.error is not None
+        assert result.error.code == "no_extractable_text"

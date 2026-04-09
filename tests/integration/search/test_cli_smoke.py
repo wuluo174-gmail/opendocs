@@ -12,6 +12,7 @@ from opendocs.app.search_service import SearchService
 from opendocs.cli.main import main as cli_main
 from opendocs.exceptions import SchemaCompatibilityError, SearchExecutionError
 from opendocs.retrieval.evidence_locator import EvidenceLocator, ExternalActionResult
+from opendocs.runtime_paths import resolve_runtime_root_from_db_path
 from opendocs.storage.db import session_scope
 
 
@@ -52,7 +53,7 @@ class TestCliSearchSmoke:
         capsys,
     ) -> None:
         db_path = tmp_path / "source_cli.db"
-        hnsw_path = tmp_path / "hnsw" / "vectors.bin"
+        hnsw_path = tmp_path / "hnsw" / "chunks.hnsw"
 
         exit_code = cli_main(
             [
@@ -166,7 +167,7 @@ class TestCliSearchSmoke:
         capsys,
     ) -> None:
         db_path = tmp_path / "source_cli.db"
-        hnsw_path = tmp_path / "hnsw" / "vectors.bin"
+        hnsw_path = tmp_path / "hnsw" / "chunks.hnsw"
         missing_path = tmp_path / "missing-source"
 
         exit_code = cli_main(
@@ -222,7 +223,7 @@ class TestCliSearchSmoke:
         capsys,
     ) -> None:
         db_path = tmp_path / "source_cli.db"
-        hnsw_path = tmp_path / "hnsw" / "vectors.bin"
+        hnsw_path = tmp_path / "hnsw" / "chunks.hnsw"
         parent = tmp_path / "workspace"
         nested = parent / "nested"
         nested.mkdir(parents=True)
@@ -277,6 +278,45 @@ class TestCliSearchSmoke:
         assert "active_sources=" in captured.out
         assert "documents=" in captured.out
         assert "watcher_running=False" in captured.out
+        assert "semantic_mode=local-lsa-v1" in captured.out
+        assert "semantic_freshness_status=ready" in captured.out
+        assert "semantic_degraded=False" in captured.out
+        assert "semantic_namespace_path=" in captured.out
+        assert "semantic_committed_artifact_path=" in captured.out
+        assert "semantic_committed_generation=" in captured.out
+        assert "semantic_committed_readable=True" in captured.out
+        assert "semantic_build_in_progress=False" in captured.out
+        assert "hnsw_status=" not in captured.out
+
+    def test_cli_status_derives_hnsw_from_explicit_db_runtime_root(
+        self,
+        tmp_path: Path,
+        capsys,
+    ) -> None:
+        runtime_root = tmp_path / "runtime"
+        db_path = runtime_root / "data" / "explicit.db"
+        config_path = tmp_path / "config" / "settings.toml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text("[index]\nwatch_changes = true\n", encoding="utf-8")
+
+        exit_code = cli_main(
+            [
+                "--config",
+                str(config_path),
+                "status",
+                "--db",
+                str(db_path),
+            ]
+        )
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        expected_hnsw = runtime_root / "index" / "hnsw" / "chunks.hnsw"
+        assert f"semantic_namespace_path={expected_hnsw}" in captured.out
+        assert "semantic_freshness_status=stale" in captured.out
+        assert "semantic_committed_generation=0" in captured.out
+        assert "semantic_committed_readable=False" in captured.out
+        assert "hnsw_status=" not in captured.out
 
     def test_cli_search_returns_results(
         self, indexed_search_env: tuple[Engine, Path, Path], capsys
@@ -376,7 +416,7 @@ class TestCliSearchSmoke:
         assert exit_code == 0
         capsys.readouterr()
 
-        audit_log = config_dir.parent / "logs" / "audit.jsonl"
+        audit_log = resolve_runtime_root_from_db_path(db_path) / "logs" / "audit.jsonl"
         content = audit_log.read_text(encoding="utf-8")
         assert "password=abc123" not in content
         assert "mytoken" not in content
@@ -483,7 +523,7 @@ class TestCliSearchSmoke:
     ) -> None:
         db_path = tmp_path / "stale.db"
         db_path.write_text("stale", encoding="utf-8")
-        hnsw_path = tmp_path / "vectors.bin"
+        hnsw_path = tmp_path / "chunks.hnsw"
 
         def _raise_schema_error(_db_path: Path) -> list[str]:
             raise SchemaCompatibilityError(
@@ -540,9 +580,10 @@ class TestOpenDocument:
     def test_open_evidence_returns_missing_target_when_file_disappears(
         self,
         indexed_search_env: tuple[Engine, Path, Path],
+        search_runtime,
     ) -> None:
-        engine, _, hnsw_path = indexed_search_env
-        search_service = SearchService(engine, hnsw_path=hnsw_path)
+        engine, _, _hnsw_path = indexed_search_env
+        search_service = search_runtime.build_search_service()
         resp = search_service.search("项目进度")
         assert len(resp.results) > 0
 

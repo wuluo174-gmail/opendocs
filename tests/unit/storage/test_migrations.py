@@ -10,7 +10,7 @@ from sqlalchemy import Engine
 
 from opendocs.domain.models import SourceRootModel
 from opendocs.exceptions import SchemaCompatibilityError
-from opendocs.storage.db import build_sqlite_engine, init_db, migrate
+from opendocs.storage.db import build_sqlite_engine, init_db, migrate, validate_schema_compatibility
 from opendocs.utils.path_facts import (
     build_display_path,
     derive_directory_facts,
@@ -192,11 +192,13 @@ def test_init_db_creates_core_tables(db_path: Path) -> None:
     assert "chunks" in tables
     assert "knowledge_items" in tables
     assert "relation_edges" in tables
+    assert "task_events" in tables
     assert "memory_items" in tables
     assert "file_operation_plans" in tables
     assert "audit_logs" in tables
     assert "chunk_fts" in tables
     assert "index_artifacts" in tables
+    assert "index_artifact_generations" in tables
 
 
 def test_migrate_is_idempotent(db_path: Path) -> None:
@@ -214,6 +216,11 @@ def test_migrate_is_idempotent(db_path: Path) -> None:
         "0010",
         "0011",
         "0012",
+        "0013",
+        "0014",
+        "0015",
+        "0016",
+        "0017",
     ]
     assert second_applied == []
 
@@ -240,6 +247,11 @@ def test_migration_version_recorded(db_path: Path) -> None:
             "0010",
             "0011",
             "0012",
+            "0013",
+            "0014",
+            "0015",
+            "0016",
+            "0017",
         }
     finally:
         connection.close()
@@ -262,6 +274,152 @@ def test_migration_adds_document_file_identity_column_and_index(db_path: Path) -
             "WHERE file_identity IS NOT NULL AND is_deleted_from_fs = 0"
             in file_identity_index_sql[0]
         )
+    finally:
+        connection.close()
+
+
+def test_migration_creates_index_artifact_generations_table_and_indexes(db_path: Path) -> None:
+    migrate(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(index_artifact_generations)").fetchall()
+        }
+        indexes = {
+            row[1] for row in connection.execute("PRAGMA index_list(index_artifact_generations)").fetchall()
+        }
+        assert {
+            "artifact_name",
+            "generation",
+            "bundle_path",
+            "state",
+            "committed_at",
+            "retired_at",
+            "delete_after",
+            "deleted_at",
+            "updated_at",
+        }.issubset(columns)
+        assert "idx_index_artifact_generations_committed" in indexes
+        assert "idx_index_artifact_generations_gc_due" in indexes
+    finally:
+        connection.close()
+
+
+def test_migration_normalizes_legacy_building_status_into_freshness_only_contract(
+    db_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from opendocs.storage import db as db_module
+
+    all_files = db_module._list_migration_files()
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.executescript(
+            """
+            CREATE TABLE schema_migrations (
+                version TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                applied_at TEXT NOT NULL
+            );
+
+            CREATE TABLE index_artifacts (
+                artifact_name TEXT PRIMARY KEY CHECK (
+                    artifact_name IN ('dense_hnsw')
+                ),
+                status TEXT NOT NULL DEFAULT 'stale' CHECK (
+                    status IN ('stale', 'ready', 'building', 'failed')
+                ),
+                artifact_path TEXT NOT NULL,
+                embedder_model TEXT NOT NULL,
+                embedder_dim INTEGER NOT NULL CHECK (embedder_dim > 0),
+                embedder_signature TEXT NOT NULL,
+                generation INTEGER NOT NULL DEFAULT 0 CHECK (generation >= 0),
+                active_build_token TEXT,
+                build_started_at TEXT,
+                lease_expires_at TEXT,
+                last_error TEXT,
+                last_reason TEXT,
+                last_built_at TEXT,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE index_artifact_generations (
+                artifact_name TEXT NOT NULL,
+                generation INTEGER NOT NULL CHECK (generation > 0),
+                bundle_path TEXT NOT NULL,
+                state TEXT NOT NULL CHECK (state IN ('committed', 'retained', 'deleted')),
+                committed_at TEXT NOT NULL,
+                retired_at TEXT,
+                delete_after TEXT,
+                deleted_at TEXT,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (artifact_name, generation),
+                FOREIGN KEY (artifact_name) REFERENCES index_artifacts(artifact_name) ON DELETE CASCADE
+            );
+
+            CREATE UNIQUE INDEX idx_index_artifacts_active_build_token
+            ON index_artifacts (active_build_token)
+            WHERE active_build_token IS NOT NULL;
+
+            CREATE UNIQUE INDEX idx_index_artifact_generations_committed
+            ON index_artifact_generations (artifact_name)
+            WHERE state = 'committed';
+
+            CREATE INDEX idx_index_artifact_generations_gc_due
+            ON index_artifact_generations (state, delete_after)
+            WHERE state = 'retained' AND delete_after IS NOT NULL;
+            """
+        )
+        for migration_file in all_files:
+            version = migration_file.name.split("_", 1)[0]
+            if version in {"0016", "0017"}:
+                continue
+            connection.execute(
+                "INSERT INTO schema_migrations (version, filename, applied_at) VALUES (?, ?, ?)",
+                (version, migration_file.name, "2026-03-03 00:00:00"),
+            )
+        connection.execute(
+            """
+            INSERT INTO index_artifacts (
+                artifact_name, status, artifact_path, embedder_model, embedder_dim,
+                embedder_signature, generation, last_reason, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "dense_hnsw",
+                "building",
+                "/tmp/runtime/index/hnsw/.dense_hnsw_bundles/legacy/chunks.hnsw",
+                "local-lsa-v1",
+                128,
+                "legacy-signature",
+                1,
+                None,
+                "2026-03-03 00:00:00",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    monkeypatch.setattr(db_module, "_list_migration_files", lambda: all_files)
+    applied = db_module.migrate(db_path)
+    assert applied == ["0016", "0017"]
+
+    connection = sqlite3.connect(db_path)
+    try:
+        table_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'index_artifacts'"
+        ).fetchone()
+        row = connection.execute(
+            "SELECT status, last_reason, namespace_path "
+            "FROM index_artifacts WHERE artifact_name = 'dense_hnsw'"
+        ).fetchone()
+        assert table_sql is not None
+        assert "status IN ('stale', 'ready', 'failed')" in table_sql[0]
+        assert "building" not in table_sql[0]
+        assert "namespace_path TEXT NOT NULL" in table_sql[0]
+        assert "artifact_path" not in table_sql[0]
+        assert row == ("stale", "legacy_building_status", "/tmp/runtime/index/hnsw/chunks.hnsw")
     finally:
         connection.close()
 
@@ -400,7 +558,7 @@ def test_index_artifacts_constraints(db_path: Path) -> None:
             connection.execute(
                 """
                 INSERT INTO index_artifacts (
-                    artifact_name, status, artifact_path, embedder_model,
+                    artifact_name, status, namespace_path, embedder_model,
                     embedder_dim, embedder_signature
                 ) VALUES (?, ?, ?, ?, ?, ?)
                 """,
@@ -413,6 +571,30 @@ def test_index_artifacts_constraints(db_path: Path) -> None:
                     "bad|dim=0",
                 ),
             )
+    finally:
+        connection.close()
+
+
+def test_index_artifacts_build_lease_columns_and_index(db_path: Path) -> None:
+    migrate(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        columns = {
+            row[1]: {"notnull": bool(row[3]), "default": row[4]}
+            for row in connection.execute("PRAGMA table_info(index_artifacts)").fetchall()
+        }
+        assert "namespace_path" in columns
+        assert "generation" in columns
+        assert columns["generation"]["notnull"] is True
+        assert "active_build_token" in columns
+        assert "build_started_at" in columns
+        assert "lease_expires_at" in columns
+
+        indexes = {
+            row[1]
+            for row in connection.execute("PRAGMA index_list(index_artifacts)").fetchall()
+        }
+        assert "idx_index_artifacts_active_build_token" in indexes
     finally:
         connection.close()
 
@@ -663,7 +845,7 @@ def test_migration_enforces_document_id_and_hash_format(db_path: Path) -> None:
         connection.close()
 
 
-def test_migration_enforces_memory_ttl_non_negative(db_path: Path) -> None:
+def test_migration_enforces_memory_review_window_days_non_negative(db_path: Path) -> None:
     migrate(db_path)
     connection = sqlite3.connect(db_path)
     try:
@@ -671,21 +853,31 @@ def test_migration_enforces_memory_ttl_non_negative(db_path: Path) -> None:
             connection.execute(
                 """
                 INSERT INTO memory_items (
-                    memory_id, memory_type, scope_type, scope_id, key, content, importance,
-                    status, ttl_days, confirmed_count, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    memory_id, memory_type, memory_kind, scope_type, scope_id, key, content,
+                    source_event_ids_json, evidence_refs_json, importance, confidence, status,
+                    review_window_days, user_confirmed_count, recall_count, decay_score,
+                    promotion_state, consolidated_from_json, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     "88888888-8888-4888-8888-888888888888",
                     "M1",
+                    "task_snapshot",
                     "task",
                     "task-1",
                     "deadline",
                     "soon",
+                    "[]",
+                    "[]",
                     0.8,
+                    0.6,
                     "active",
                     -1,
                     0,
+                    0,
+                    0.0,
+                    "promoted",
+                    "[]",
                     "2026-03-03T00:00:00",
                 ),
             )
@@ -713,6 +905,80 @@ def test_migration_enforces_plan_item_count_non_negative(db_path: Path) -> None:
                     "{}",
                 ),
             )
+    finally:
+        connection.close()
+
+
+def test_migration_drops_legacy_memory_rows_without_task_events(
+    db_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from opendocs.storage import db as db_module
+
+    all_files = db_module._list_migration_files()
+    legacy_files = [path for path in all_files if path.name < "0013_task_events_and_memory_contract.sql"]
+    monkeypatch.setattr(db_module, "_list_migration_files", lambda: legacy_files)
+    db_module.migrate(db_path)
+
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("DROP INDEX IF EXISTS idx_memory_items_active_scope_key")
+        connection.execute("DROP INDEX IF EXISTS idx_memory_items_scope")
+        connection.execute("DROP INDEX IF EXISTS idx_memory_items_supersedes_memory")
+        connection.execute("DROP TABLE memory_items")
+        connection.execute(
+            """
+            CREATE TABLE memory_items (
+                memory_id TEXT PRIMARY KEY,
+                memory_type TEXT NOT NULL,
+                scope_type TEXT NOT NULL,
+                scope_id TEXT NOT NULL,
+                key TEXT NOT NULL,
+                content TEXT NOT NULL,
+                importance REAL NOT NULL DEFAULT 0.5,
+                status TEXT NOT NULL DEFAULT 'active',
+                ttl_days INTEGER,
+                confirmed_count INTEGER NOT NULL DEFAULT 0,
+                last_confirmed_at TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(memory_type, scope_type, scope_id, key)
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO memory_items (
+                memory_id, memory_type, scope_type, scope_id, key, content, importance,
+                status, ttl_days, confirmed_count, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "99999999-aaaa-4999-8999-999999999999",
+                "M1",
+                "task",
+                "legacy-scope",
+                "legacy-key",
+                "legacy-content",
+                0.7,
+                "active",
+                30,
+                1,
+                "2026-03-03T00:00:00",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    monkeypatch.setattr(db_module, "_list_migration_files", lambda: all_files)
+    applied = db_module.migrate(db_path)
+    assert applied == ["0013", "0014", "0015", "0016", "0017"]
+
+    connection = sqlite3.connect(db_path)
+    try:
+        count = connection.execute("SELECT COUNT(*) FROM memory_items").fetchone()[0]
+        assert count == 0
     finally:
         connection.close()
 
@@ -970,6 +1236,54 @@ def test_build_sqlite_engine_rejects_stale_development_schema(db_path: Path) -> 
         build_sqlite_engine(db_path)
 
 
+def test_validate_schema_compatibility_rejects_memory_rows_without_task_event_refs(
+    db_path: Path,
+) -> None:
+    init_db(db_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            """
+            INSERT INTO memory_items (
+                memory_id, memory_type, memory_kind, scope_type, scope_id, key, content,
+                source_event_ids_json, evidence_refs_json, importance, confidence, status,
+                review_window_days, user_confirmed_count, recall_count, decay_score,
+                promotion_state, consolidated_from_json, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "12121212-3434-4121-8121-565656565656",
+                "M1",
+                "task_snapshot",
+                "task",
+                "task-1",
+                "status",
+                "ready",
+                "[]",
+                "[]",
+                0.5,
+                0.8,
+                "active",
+                30,
+                0,
+                0,
+                0.0,
+                "promoted",
+                "[]",
+                "2026-03-03 00:00:00",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    with pytest.raises(
+        SchemaCompatibilityError,
+        match="memory_items contains rows without source_event_ids_json backing events",
+    ):
+        validate_schema_compatibility(db_path)
+
+
 def test_migration_backfills_directory_facts_for_legacy_documents(
     db_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1018,7 +1332,20 @@ def test_migration_backfills_directory_facts_for_legacy_documents(
 
     monkeypatch.setattr(db_module, "_list_migration_files", lambda: all_files)
     applied = db_module.migrate(db_path)
-    assert applied == ["0006", "0007", "0008", "0009", "0010", "0011", "0012"]
+    assert applied == [
+        "0006",
+        "0007",
+        "0008",
+        "0009",
+        "0010",
+        "0011",
+        "0012",
+        "0013",
+        "0014",
+        "0015",
+        "0016",
+        "0017",
+    ]
 
     connection = sqlite3.connect(db_path)
     try:
@@ -1087,7 +1414,19 @@ def test_migration_repairs_legacy_source_path_to_document_path(
 
     monkeypatch.setattr(db_module, "_list_migration_files", lambda: all_files)
     applied = db_module.migrate(db_path)
-    assert applied == ["0007", "0008", "0009", "0010", "0011", "0012"]
+    assert applied == [
+        "0007",
+        "0008",
+        "0009",
+        "0010",
+        "0011",
+        "0012",
+        "0013",
+        "0014",
+        "0015",
+        "0016",
+        "0017",
+    ]
 
     connection = sqlite3.connect(db_path)
     try:

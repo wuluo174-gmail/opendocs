@@ -4,7 +4,7 @@
 
 ## 一句话定义
 
-OpenDocs 是一个运行在个人电脑上的本地优先 AI 文档管理组件，专注于扫描、索引、检索、问答、摘要、分类、归档、生成与审计文本类工作文档，所有事实性输出必须能回溯到文档证据。
+OpenDocs 是一个运行在个人电脑上的本地优先 AI 文档助理，专注于扫描、索引、检索、问答、摘要、分类、归档、生成与审计文本类工作文档，所有事实性输出必须能回溯到文档证据。
 
 ## 架构风格
 
@@ -24,7 +24,7 @@ MVP 采用**模块化单体（modular monolith）**，而非微服务。
 │ memory/  │ audit/   │ classification/   │  ← 记忆 / 审计 / 分类
 │ provider/│ config/  │ utils/            │  ← 模型路由 / 配置 / 工具
 ├─────────────────────────────────────────┤
-│  Storage Layer  (storage/)              │  ← SQLite + FTS5 + HNSW
+│  Storage Layer  (storage/)              │  ← SQLite + FTS5 + HNSW + 派生工件状态
 └─────────────────────────────────────────┘
 ```
 
@@ -50,13 +50,13 @@ MVP 采用**模块化单体（modular monolith）**，而非微服务。
 ## 数据流概览
 
 ### 索引流
-文件系统 → 扫描器 → 解析器注册表 → Chunker → SQLite（Document/Chunk/FTS5）+ HNSW 向量索引
+SourceRoot → ScanRun → 文件系统 → 扫描器 → 解析器注册表 → Chunker → SQLite（Document/Chunk/FTS5）+ HNSW 向量索引 + IndexArtifact
 
 ### 检索流
 用户查询 → FTS5 召回 + 向量召回 → 分数融合 → 候选证据集 → 模型生成答案 → 引用校验器 → 带引用回答
 
 ### 归档流
-用户选择 → 分类器 → FileOperationPlan（draft）→ 预览确认 → 执行（move/rename/create）→ AuditLog
+用户选择 → 分类器 → FileOperationPlan（draft，含逐项变更/依据摘要/风险/回滚最小信息）→ 预览确认 → 执行（move/rename/create）→ AuditLog
 
 ## 安全红线（不可违背）
 

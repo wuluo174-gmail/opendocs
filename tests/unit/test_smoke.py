@@ -62,6 +62,7 @@ def test_cli_help_smoke() -> None:
     assert "source" in completed.stdout
     assert "status" in completed.stdout
     assert "watch" in completed.stdout
+    assert "qa" in completed.stdout
 
 
 def test_cli_default_start_smoke(tmp_path: Path) -> None:
@@ -96,7 +97,7 @@ def test_cli_default_start_smoke(tmp_path: Path) -> None:
 def test_stage_scaffold_scripts_exist() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     scripts_dir = repo_root / "scripts"
-    required = ["bootstrap_dev.py"]
+    required = ["bootstrap_dev.py", "run_static_checks.py"]
     for script_name in required:
         assert (scripts_dir / script_name).exists()
 

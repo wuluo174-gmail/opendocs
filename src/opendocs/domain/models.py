@@ -210,24 +210,78 @@ class IndexArtifactModel(Base):
             name="ck_index_artifacts_artifact_name",
         ),
         CheckConstraint(
-            "status IN ('stale', 'ready', 'building', 'failed')",
+            "status IN ('stale', 'ready', 'failed')",
             name="ck_index_artifacts_status",
         ),
         CheckConstraint(
             "embedder_dim > 0",
             name="ck_index_artifacts_embedder_dim_positive",
         ),
+        CheckConstraint(
+            "generation >= 0",
+            name="ck_index_artifacts_generation_non_negative",
+        ),
+        Index(
+            "idx_index_artifacts_active_build_token",
+            "active_build_token",
+            unique=True,
+            sqlite_where=text("active_build_token IS NOT NULL"),
+        ),
     )
 
     artifact_name: Mapped[str] = mapped_column(String(32), primary_key=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="stale")
-    artifact_path: Mapped[str] = mapped_column(Text, nullable=False)
+    namespace_path: Mapped[str] = mapped_column(Text, nullable=False)
     embedder_model: Mapped[str] = mapped_column(Text, nullable=False)
     embedder_dim: Mapped[int] = mapped_column(Integer, nullable=False)
     embedder_signature: Mapped[str] = mapped_column(Text, nullable=False)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active_build_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    build_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_built_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+
+
+class IndexArtifactGenerationModel(Base):
+    __tablename__ = "index_artifact_generations"
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('committed', 'retained', 'deleted')",
+            name="ck_index_artifact_generations_state",
+        ),
+        CheckConstraint(
+            "generation > 0",
+            name="ck_index_artifact_generations_generation_positive",
+        ),
+        Index(
+            "idx_index_artifact_generations_committed",
+            "artifact_name",
+            unique=True,
+            sqlite_where=text("state = 'committed'"),
+        ),
+        Index(
+            "idx_index_artifact_generations_gc_due",
+            "state",
+            "delete_after",
+            sqlite_where=text("state = 'retained' AND delete_after IS NOT NULL"),
+        ),
+    )
+
+    artifact_name: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("index_artifacts.artifact_name", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    generation: Mapped[int] = mapped_column(Integer, primary_key=True)
+    bundle_path: Mapped[str] = mapped_column(Text, nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    committed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    delete_after: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
 
 
@@ -309,16 +363,66 @@ class RelationEdgeModel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
 
 
+class TaskEventModel(Base):
+    __tablename__ = "task_events"
+    __table_args__ = (
+        CheckConstraint(_uuid_check_sql("event_id"), name="ck_task_events_event_id_uuid"),
+        CheckConstraint("length(trace_id) > 0", name="ck_task_events_trace_id_non_empty"),
+        CheckConstraint("length(stage_id) > 0", name="ck_task_events_stage_id_non_empty"),
+        CheckConstraint("length(task_type) > 0", name="ck_task_events_task_type_non_empty"),
+        CheckConstraint(
+            "scope_type IN ('session', 'task', 'user')",
+            name="ck_task_events_scope_type",
+        ),
+        CheckConstraint("length(scope_id) > 0", name="ck_task_events_scope_id_non_empty"),
+        CheckConstraint(
+            "related_plan_id IS NULL OR " + _uuid_check_sql("related_plan_id"),
+            name="ck_task_events_related_plan_id_uuid",
+        ),
+        Index("idx_task_events_trace", "trace_id"),
+        Index("idx_task_events_scope", "scope_type", "scope_id"),
+        Index("idx_task_events_occurred_at", "occurred_at"),
+        Index("idx_task_events_related_plan", "related_plan_id"),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    trace_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    stage_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    scope_id: Mapped[str] = mapped_column(Text, nullable=False)
+    input_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    output_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    related_chunk_ids_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    evidence_refs_json: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
+    related_plan_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("file_operation_plans.plan_id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    artifact_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+    persisted_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+
+
 class MemoryItemModel(Base):
     __tablename__ = "memory_items"
     __table_args__ = (
-        CheckConstraint("memory_type IN ('M0', 'M1', 'M2')", name="ck_memory_items_memory_type"),
+        CheckConstraint("memory_type IN ('M1', 'M2')", name="ck_memory_items_memory_type"),
         CheckConstraint(
-            "scope_type IN ('session', 'task', 'user')",
+            "memory_kind IN ('task_snapshot', 'retry_point', 'preference_pattern', 'workflow_hint')",
+            name="ck_memory_items_memory_kind",
+        ),
+        CheckConstraint(
+            "scope_type IN ('task', 'user')",
             name="ck_memory_items_scope_type",
         ),
         CheckConstraint(
-            "status IN ('active', 'expired', 'disabled')",
+            "status IN ('active', 'expired', 'disabled', 'superseded')",
             name="ck_memory_items_status",
         ),
         CheckConstraint(
@@ -326,31 +430,76 @@ class MemoryItemModel(Base):
             name="ck_memory_items_importance_range",
         ),
         CheckConstraint(
-            "ttl_days IS NULL OR ttl_days >= 0",
-            name="ck_memory_items_ttl_days_non_negative",
+            "confidence >= 0.0 AND confidence <= 1.0",
+            name="ck_memory_items_confidence_range",
         ),
-        UniqueConstraint(
+        CheckConstraint(
+            "review_window_days >= 0",
+            name="ck_memory_items_review_window_days_non_negative",
+        ),
+        CheckConstraint(
+            "user_confirmed_count >= 0",
+            name="ck_memory_items_user_confirmed_count_non_negative",
+        ),
+        CheckConstraint(
+            "recall_count >= 0",
+            name="ck_memory_items_recall_count_non_negative",
+        ),
+        CheckConstraint(
+            "decay_score >= 0.0 AND decay_score <= 1.0",
+            name="ck_memory_items_decay_score_range",
+        ),
+        CheckConstraint(
+            "promotion_state IN ('candidate', 'promoted')",
+            name="ck_memory_items_promotion_state",
+        ),
+        CheckConstraint(_uuid_check_sql("memory_id"), name="ck_memory_items_memory_id_uuid"),
+        CheckConstraint(
+            "supersedes_memory_id IS NULL OR " + _uuid_check_sql("supersedes_memory_id"),
+            name="ck_memory_items_supersedes_memory_id_uuid",
+        ),
+        Index(
+            "idx_memory_items_active_scope_key",
             "memory_type",
             "scope_type",
             "scope_id",
             "key",
-            name="uq_memory_items_scope_key",
+            unique=True,
+            sqlite_where=text("status = 'active' AND promotion_state = 'promoted'"),
         ),
-        CheckConstraint(_uuid_check_sql("memory_id"), name="ck_memory_items_memory_id_uuid"),
+        Index("idx_memory_items_scope", "scope_type", "scope_id"),
+        Index("idx_memory_items_supersedes_memory", "supersedes_memory_id"),
     )
 
     memory_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     memory_type: Mapped[str] = mapped_column(String(8), nullable=False)
+    memory_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     scope_type: Mapped[str] = mapped_column(String(16), nullable=False)
     scope_id: Mapped[str] = mapped_column(Text, nullable=False)
     key: Mapped[str] = mapped_column(Text, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    source_event_ids_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    evidence_refs_json: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
     importance: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
-    ttl_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    confirmed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    last_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
+    review_window_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    user_confirmed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_user_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    recall_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_recalled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    decay_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    promotion_state: Mapped[str] = mapped_column(String(16), nullable=False, default="promoted")
+    consolidated_from_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    supersedes_memory_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("memory_items.memory_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow_naive)
 
 
@@ -394,9 +543,9 @@ class AuditLogModel(Base):
         CheckConstraint("result IN ('success', 'failure')", name="ck_audit_logs_result"),
         CheckConstraint(
             "target_type IN ("
-            "'document', 'plan', 'memory', 'answer', "
+            "'document', 'plan', 'memory', 'task_event', 'answer', "
             "'source', 'search', 'provider_call', "
-            "'generation', 'index_run', 'rollback')",
+            "'generation', 'index_run', 'rollback', 'artifact')",
             name="ck_audit_logs_target_type",
         ),
         CheckConstraint(_uuid_check_sql("audit_id"), name="ck_audit_logs_audit_id_uuid"),

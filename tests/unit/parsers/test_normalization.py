@@ -31,10 +31,10 @@ class TestNormalizeText:
         result = normalize_text(text)
         assert result == "你好 世界"
 
-    def test_collapse_whitespace(self) -> None:
+    def test_collapse_spaces_but_preserve_tabs(self) -> None:
         text = "hello   world\t\there"
         result = normalize_text(text)
-        assert result == "hello world here"
+        assert result == "hello world\t\there"
 
     def test_preserve_newlines(self) -> None:
         text = "line1\n\nline2"

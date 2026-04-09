@@ -6,9 +6,7 @@ import re
 from pathlib import Path
 
 REPORT_PATH = Path("docs/test-plan/S3_stage_report.md")
-EXPECTED_SNAPSHOT_RULE = (
-    "本节只记录当前仓库中仍然存在、且仍由 S3 主链路消费的 owner / 交付物快照。"
-)
+EXPECTED_SNAPSHOT_RULE = "本节只记录当前仓库中仍然存在、且仍由 S3 主链路消费的 owner / 交付物快照。"
 EXPECTED_FILE_IDENTITY_RULE = "`documents.file_identity` 改为“仅约束 active 行唯一”"
 EXPECTED_BATCH_RESOLUTION_RULE = "增量索引现在以前一轮 active 文档集和本轮 scan 为输入统一决算"
 EXPECTED_WATCHER_LIFECYCLE = (
@@ -44,8 +42,7 @@ class TestS3StageReportContract:
             "## 2. 关键实现说明",
         )
         report_paths = {
-            ref.split("#", 1)[0].rstrip("/")
-            for ref in REPO_PATH_RE.findall(section_text)
+            ref.split("#", 1)[0].rstrip("/") for ref in REPO_PATH_RE.findall(section_text)
         }
 
         missing_paths = sorted(path for path in report_paths if not (repo_root / path).exists())

@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy.engine import Engine
 
 from opendocs.app.index_service import IndexService
+from opendocs.app.runtime import OpenDocsRuntime
 from opendocs.app.source_service import SourceService
 from opendocs.storage.db import build_sqlite_engine, init_db
 from opendocs.utils.logging import init_logging
@@ -41,19 +42,36 @@ def engine(db_path: Path) -> Engine:
 
 @pytest.fixture()
 def hnsw_path(work_dir: Path) -> Path:
-    p = work_dir / "index" / "hnsw" / "vectors.bin"
+    p = work_dir / "index" / "hnsw" / "chunks.hnsw"
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
 
 
 @pytest.fixture()
-def source_service(engine: Engine, hnsw_path: Path) -> SourceService:
-    return SourceService(engine, hnsw_path=hnsw_path)
+def indexing_runtime(engine: Engine, hnsw_path: Path) -> OpenDocsRuntime:
+    runtime = OpenDocsRuntime(engine, hnsw_path=hnsw_path)
+    try:
+        yield runtime
+    finally:
+        runtime.close()
 
 
 @pytest.fixture()
-def index_service(engine: Engine, hnsw_path: Path) -> IndexService:
-    return IndexService(engine, hnsw_path=hnsw_path)
+def source_service(indexing_runtime: OpenDocsRuntime) -> SourceService:
+    return SourceService(
+        indexing_runtime.engine,
+        hnsw_path=indexing_runtime.hnsw_path,
+        runtime=indexing_runtime,
+    )
+
+
+@pytest.fixture()
+def index_service(indexing_runtime: OpenDocsRuntime) -> IndexService:
+    service = indexing_runtime.build_index_service()
+    try:
+        yield service
+    finally:
+        service.close()
 
 
 @pytest.fixture()

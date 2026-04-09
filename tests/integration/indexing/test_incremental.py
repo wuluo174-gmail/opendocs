@@ -97,7 +97,7 @@ class TestTC003:
         new_file.write_text("HNSW sync test content.")
 
         result = index_service.update_index_for_changes(source.source_root_id)
-        assert result.hnsw_status == "synced"
+        assert result.dense_reconcile_status == "synced"
 
     def test_modified_file_updated_incrementally(
         self,

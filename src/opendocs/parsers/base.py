@@ -75,17 +75,99 @@ class ParsedDocument(BaseModel):
         return self
 
 
+def finalize_parsed_document(
+    result: ParsedDocument,
+    *,
+    parser_name: str,
+) -> ParsedDocument:
+    """Normalize parser output and enforce the shared extractability contract.
+
+    S2's authoritative parse state must come from the parsed content itself,
+    not from downstream index/chunk consumers guessing what an empty payload
+    means. A document with no extractable normalized text is therefore a
+    failed parse, even if the file exists and the low-level parser did not
+    raise.
+    """
+
+    if result.parse_status == "failed":
+        return result
+
+    if result.error is None and result.error_info:
+        error_code = "partial_parse" if result.parse_status == "partial" else "parse_failed"
+        result.error = ParseError(
+            code=error_code,
+            message=result.error_info,
+            details={"parser": parser_name},
+        )
+
+    if result.title is not None:
+        result.title = normalize_text(result.title)
+    result.metadata = result.metadata.normalized_with(normalize_text)
+
+    if result.raw_text:
+        for para in result.paragraphs:
+            para.text = normalize_text(para.text)
+            if para.heading_path is not None:
+                para.heading_path = normalize_text(para.heading_path)
+        if result.paragraphs:
+            parts = [p.text for p in result.paragraphs]
+            result.raw_text = "\n".join(parts)
+            offset = 0
+            for para in result.paragraphs:
+                para.start_char = offset
+                para.end_char = offset + len(para.text)
+                offset = para.end_char + 1
+        else:
+            result.raw_text = normalize_text(result.raw_text)
+
+    if result.raw_text.strip():
+        return result
+
+    error_message = "no extractable text"
+    error_details: dict[str, Any] = {"parser": parser_name}
+    if result.error is not None:
+        error_details["upstream_code"] = result.error.code
+        if result.error.details:
+            error_details["upstream_details"] = result.error.details
+    if result.error_info:
+        error_message = f"{error_message}; {result.error_info}"
+    return ParsedDocument(
+        file_path=result.file_path,
+        file_type=result.file_type,
+        raw_text="",
+        title=result.title,
+        parse_status="failed",
+        error_info=error_message,
+        error=ParseError(
+            code="no_extractable_text",
+            message=error_message,
+            details=error_details,
+        ),
+        paragraphs=[],
+        page_count=result.page_count,
+        metadata=result.metadata,
+    )
+
+
 class BaseParser(ABC):
     """Abstract base class for document parsers.
 
     **Important**: external callers should use ``ParserRegistry.parse()``
-    rather than calling individual parsers directly.  The registry applies
-    text normalization and failure isolation that individual parsers do not.
+    rather than calling individual parsers directly. The registry provides
+    failure isolation and format routing; the parser base class owns the
+    shared parse-finalization contract.
     """
 
-    @abstractmethod
     def parse(self, file_path: Path) -> ParsedDocument:
-        """Parse a file and return a ParsedDocument."""
+        """Parse a file and return a finalized ParsedDocument."""
+        return finalize_parsed_document(
+            self._parse_raw(file_path),
+            parser_name=self.__class__.__name__,
+        )
+
+    @abstractmethod
+    def _parse_raw(self, file_path: Path) -> ParsedDocument:
+        """Extract the raw ParsedDocument before shared finalization."""
 
     @abstractmethod
     def supported_extensions(self) -> list[str]:
@@ -155,11 +237,8 @@ class ParserRegistry:
             logger.warning("Unsupported format: %s", ext)
             return _failed("unsupported_format", f"unsupported format: {ext}", extension=ext)
 
-        # Acceptance TC-002 treats empty files as problematic inputs that
-        # must surface in the failure bucket, not as successful parses.
         try:
-            if file_path.stat().st_size == 0:
-                return _failed("empty_file", "empty file")
+            file_path.stat()
         except PermissionError:
             return _failed("permission_denied", "permission denied", operation="stat")
         except OSError as exc:
@@ -203,45 +282,4 @@ class ParserRegistry:
                 parser=parser.__class__.__name__,
                 exception_type=type(exc).__name__,
             )
-
-        if result.error is None and result.error_info:
-            error_code = "partial_parse" if result.parse_status == "partial" else "parse_failed"
-            result.error = ParseError(
-                code=error_code,
-                message=result.error_info,
-                details={"parser": parser.__class__.__name__},
-            )
-
-        # Apply text normalization (NFC, fullwidth→halfwidth, whitespace)
-        # then recompute offsets so they match the normalized raw_text.
-        #
-        # NOTE (ADR-0010): After normalization, raw_text and char offsets
-        # correspond to the *normalized* text, NOT the original file bytes.
-        # If a future stage (e.g. FR-015 evidence viewer) needs to jump to
-        # the exact position in the original file, an additional original-
-        # offset mapping will be required.  Within S2 the offsets are
-        # internally consistent (tested in TestNormalizationOffsetIntegrity).
-        if result.parse_status != "failed":
-            if result.title is not None:
-                result.title = normalize_text(result.title)
-            result.metadata = result.metadata.normalized_with(normalize_text)
-
-        if result.parse_status != "failed" and result.raw_text:
-            # Normalize each paragraph text first
-            for para in result.paragraphs:
-                para.text = normalize_text(para.text)
-                if para.heading_path is not None:
-                    para.heading_path = normalize_text(para.heading_path)
-            # Rebuild raw_text from normalized paragraphs and recompute offsets
-            if result.paragraphs:
-                parts = [p.text for p in result.paragraphs]
-                result.raw_text = "\n".join(parts)
-                offset = 0
-                for para in result.paragraphs:
-                    para.start_char = offset
-                    para.end_char = offset + len(para.text)
-                    offset = para.end_char + 1  # +1 for \n separator
-            else:
-                result.raw_text = normalize_text(result.raw_text)
-
         return result

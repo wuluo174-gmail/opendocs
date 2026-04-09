@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from opendocs.app.index_service import IndexService
+from opendocs.app.runtime import OpenDocsRuntime
 from opendocs.app.search_service import SearchService
 from opendocs.app.source_service import SourceService
 from opendocs.domain.document_metadata import DocumentMetadata
@@ -57,6 +57,7 @@ class AcceptanceRuntimePaths:
 class AcceptanceSearchRuntime:
     corpus_dir: Path
     paths: AcceptanceRuntimePaths
+    runtime: OpenDocsRuntime
     search_service: SearchService
 
 
@@ -262,7 +263,12 @@ def build_acceptance_search_runtime(
 
     resolved_runtime_dir = runtime_dir.resolve()
     db_path = resolved_runtime_dir / "opendocs.db"
-    hnsw_path = resolved_runtime_dir / "index" / "hnsw" / "vectors.bin"
+    from opendocs.runtime_paths import build_runtime_paths
+
+    hnsw_path = build_runtime_paths(
+        app_root=resolved_runtime_dir,
+        db_path=db_path,
+    ).hnsw_path
     hnsw_path.parent.mkdir(parents=True, exist_ok=True)
 
     init_db(db_path)
@@ -271,8 +277,9 @@ def build_acceptance_search_runtime(
     source_kwargs: dict[str, object] = {"label": source_label}
     if default_metadata is not None:
         source_kwargs["default_metadata"] = default_metadata
-    source = SourceService(engine).add_source(resolved_corpus_dir, **source_kwargs)
-    IndexService(engine, hnsw_path=hnsw_path).rebuild_index(source.source_root_id)
+    runtime = OpenDocsRuntime(engine, hnsw_path=hnsw_path)
+    source = SourceService(engine, runtime=runtime).add_source(resolved_corpus_dir, **source_kwargs)
+    runtime.build_index_service().rebuild_index(source.source_root_id)
 
     return AcceptanceSearchRuntime(
         corpus_dir=resolved_corpus_dir,
@@ -281,7 +288,8 @@ def build_acceptance_search_runtime(
             db_path=db_path,
             hnsw_path=hnsw_path,
         ),
-        search_service=SearchService(engine, hnsw_path=hnsw_path),
+        runtime=runtime,
+        search_service=runtime.build_search_service(),
     )
 
 
@@ -455,32 +463,36 @@ def capture_s4_tc018_artifacts(
             Path(runtime),
             source_label="S4 TC-018 artifact capture",
         )
-        window = SearchWindow(runtime_state.search_service, auto_open_on_locate=False)
-        window.resize(1440, 960)
-        window.show()
-        _process_events(app)
+        window: SearchWindow | None = None
+        try:
+            window = SearchWindow(runtime_state.search_service, auto_open_on_locate=False)
+            window.resize(1440, 960)
+            window.show()
+            _process_events(app)
 
-        artifacts = [
-            _capture_window_case(
-                app=app,
-                window=window,
-                output_dir=resolved_output_dir,
-                spec=spec,
-                file_prefix="tc018",
-            )
-            for spec in (
-                CaptureSpec(
-                    slug=case.slug,
-                    query=case.query,
-                    expected_file_name=case.expected_file_name,
-                    note=case.note,
+            artifacts = [
+                _capture_window_case(
+                    app=app,
+                    window=window,
+                    output_dir=resolved_output_dir,
+                    spec=spec,
+                    file_prefix="tc018",
                 )
-                for case in capture_cases.tc018
-            )
-        ]
-
-        window.close()
-        _process_events(app)
+                for spec in (
+                    CaptureSpec(
+                        slug=case.slug,
+                        query=case.query,
+                        expected_file_name=case.expected_file_name,
+                        note=case.note,
+                    )
+                    for case in capture_cases.tc018
+                )
+            ]
+        finally:
+            if window is not None:
+                window.close()
+            runtime_state.runtime.close()
+            _process_events(app)
 
     manifest = CaptureManifest(
         case_id="TC-018",
@@ -545,43 +557,47 @@ def capture_s4_tc005_artifacts(
             source_label="S4 TC-005 artifact capture",
             default_metadata=build_s4_search_source_defaults(),
         )
-        golden_queries = load_s4_hybrid_search_queries()
-        query_logs = [
-            _serialize_tc005_query_log(
-                golden_query=golden_query,
-                search_service=runtime_state.search_service,
-                top_k=10,
-            )
-            for golden_query in golden_queries
-        ]
-        filter_logs = [
-            _serialize_tc005_filter_log(
-                filter_case=filter_case,
-                search_service=runtime_state.search_service,
-                corpus_dir=resolved_corpus_dir,
-            )
-            for filter_case in load_s4_search_filter_cases()
-        ]
-        queries_by_id = {golden_query.query_id: golden_query for golden_query in golden_queries}
+        window: SearchWindow | None = None
+        try:
+            golden_queries = load_s4_hybrid_search_queries()
+            query_logs = [
+                _serialize_tc005_query_log(
+                    golden_query=golden_query,
+                    search_service=runtime_state.search_service,
+                    top_k=10,
+                )
+                for golden_query in golden_queries
+            ]
+            filter_logs = [
+                _serialize_tc005_filter_log(
+                    filter_case=filter_case,
+                    search_service=runtime_state.search_service,
+                    corpus_dir=resolved_corpus_dir,
+                )
+                for filter_case in load_s4_search_filter_cases()
+            ]
+            queries_by_id = {golden_query.query_id: golden_query for golden_query in golden_queries}
 
-        window = SearchWindow(runtime_state.search_service, auto_open_on_locate=False)
-        window.resize(1440, 960)
-        window.show()
-        _process_events(app)
+            window = SearchWindow(runtime_state.search_service, auto_open_on_locate=False)
+            window.resize(1440, 960)
+            window.show()
+            _process_events(app)
 
-        artifacts = [
-            _capture_tc005_window_case(
-                app=app,
-                window=window,
-                output_dir=resolved_output_dir,
-                spec=_resolve_tc005_capture_spec(spec, queries_by_id),
-                query_id=spec.query_id,
-            )
-            for spec in capture_cases.tc005
-        ]
-
-        window.close()
-        _process_events(app)
+            artifacts = [
+                _capture_tc005_window_case(
+                    app=app,
+                    window=window,
+                    output_dir=resolved_output_dir,
+                    spec=_resolve_tc005_capture_spec(spec, queries_by_id),
+                    query_id=spec.query_id,
+                )
+                for spec in capture_cases.tc005
+            ]
+        finally:
+            if window is not None:
+                window.close()
+            runtime_state.runtime.close()
+            _process_events(app)
 
     query_log_path = resolved_output_dir / "query_results.json"
     query_log_path.write_text(

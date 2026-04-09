@@ -19,17 +19,20 @@ from opendocs.domain.models import (
     MemoryItemModel,
     RelationEdgeModel,
     SourceRootModel,
+    TaskEventModel,
 )
 from opendocs.exceptions import DeleteNotAllowedError, PlanNotApprovedError, StorageError
 from opendocs.storage.repositories import (
     AuditRepository,
     ChunkRepository,
     DocumentRepository,
+    IndexArtifactRepository,
     KnowledgeRepository,
     MemoryRepository,
     PlanRepository,
     RelationRepository,
     SourceRepository,
+    TaskEventRepository,
 )
 from opendocs.utils.path_facts import (
     build_display_path,
@@ -104,6 +107,33 @@ def _new_chunk(doc_id: str, *, chunk_index: int = 0) -> ChunkModel:
         text="chunk text",
         char_start=0,
         char_end=10,
+    )
+
+
+def _new_task_event(
+    *,
+    chunk_id: str,
+    scope_id: str,
+    plan_id: str | None = None,
+    trace_id: str = "trace-task-event",
+    occurred_at: datetime | None = None,
+) -> TaskEventModel:
+    now = occurred_at or _now()
+    return TaskEventModel(
+        event_id=str(uuid.uuid4()),
+        trace_id=trace_id,
+        stage_id="S1",
+        task_type="seed_demo",
+        scope_type="task",
+        scope_id=scope_id,
+        input_summary="seed input",
+        output_summary="seed output",
+        related_chunk_ids_json=[chunk_id],
+        evidence_refs_json=[{"chunk_id": chunk_id}],
+        related_plan_id=plan_id,
+        artifact_ref="C:/docs/output.md",
+        occurred_at=now,
+        persisted_at=now,
     )
 
 
@@ -227,6 +257,92 @@ def test_document_update_indexed_at(engine: Engine) -> None:
         assert refreshed.modified_at == original_modified_at
 
         assert repository.update_indexed_at("nonexistent-id") is False
+
+
+def test_index_artifact_repository_tracks_committed_and_retained_generations(engine: Engine) -> None:
+    now = utcnow_naive()
+    with Session(engine) as session:
+        repository = IndexArtifactRepository(session)
+        repository.ensure_artifact(
+            "dense_hnsw",
+            namespace_path="/runtime/index/hnsw/chunks.hnsw",
+            embedder_model="local-lsa-v1",
+            embedder_dim=128,
+            embedder_signature="sig-v1",
+        )
+        assert repository.try_claim_build(
+            "dense_hnsw",
+            namespace_path="/runtime/index/hnsw/chunks.hnsw",
+            embedder_model="local-lsa-v1",
+            embedder_dim=128,
+            embedder_signature="sig-v1",
+            build_token="token-1",
+            build_started_at=now,
+            lease_expires_at=now + timedelta(minutes=5),
+            reason="build-1",
+        )
+        completed, previous_path = repository.complete_build(
+            "dense_hnsw",
+            build_token="token-1",
+            reason="build-1",
+            last_built_at=now,
+            committed_bundle_path="/runtime/index/.dense_hnsw_bundles/token-1/chunks.hnsw",
+            embedder_model="local-lsa-v1",
+            embedder_dim=128,
+            embedder_signature="sig-v1",
+            retained_delete_after=now + timedelta(minutes=10),
+        )
+        assert completed is True
+        assert previous_path is None
+
+        assert repository.try_claim_build(
+            "dense_hnsw",
+            namespace_path="/runtime/index/hnsw/chunks.hnsw",
+            embedder_model="local-lsa-v1",
+            embedder_dim=128,
+            embedder_signature="sig-v1",
+            build_token="token-2",
+            build_started_at=now + timedelta(minutes=1),
+            lease_expires_at=now + timedelta(minutes=6),
+            reason="build-2",
+        )
+        completed, previous_path = repository.complete_build(
+            "dense_hnsw",
+            build_token="token-2",
+            reason="build-2",
+            last_built_at=now + timedelta(minutes=1),
+            committed_bundle_path="/runtime/index/.dense_hnsw_bundles/token-2/chunks.hnsw",
+            embedder_model="local-lsa-v1",
+            embedder_dim=128,
+            embedder_signature="sig-v1",
+            retained_delete_after=now + timedelta(minutes=11),
+        )
+        session.commit()
+
+        assert completed is True
+        assert previous_path == "/runtime/index/.dense_hnsw_bundles/token-1/chunks.hnsw"
+        artifact = repository.get("dense_hnsw")
+        assert artifact is not None
+        assert artifact.namespace_path == "/runtime/index/hnsw/chunks.hnsw"
+        generations = repository.list_generations("dense_hnsw", include_deleted=True)
+        assert [row.generation for row in generations[:2]] == [2, 1]
+        assert generations[0].state == "committed"
+        assert generations[1].state == "retained"
+        assert generations[1].delete_after is not None
+
+
+def test_index_artifact_repository_rejects_legacy_building_public_status(engine: Engine) -> None:
+    with Session(engine) as session:
+        repository = IndexArtifactRepository(session)
+        with pytest.raises(ValueError, match="invalid public artifact status"):
+            repository.upsert(
+                "dense_hnsw",
+                status="building",
+                namespace_path="/runtime/index/hnsw/chunks.hnsw",
+                embedder_model="local-lsa-v1",
+                embedder_dim=128,
+                embedder_signature="sig-v1",
+            )
 
 
 def test_document_mark_deleted_from_fs(engine: Engine) -> None:
@@ -502,16 +618,34 @@ def test_relation_repository_crud(engine: Engine) -> None:
 
 def test_memory_repository_crud(engine: Engine) -> None:
     with Session(engine) as session:
+        source_root = _add_source_root(session, path="C:/docs")
+        document = _new_document("C:/docs/memory.md", source_root_id=source_root.source_root_id)
+        DocumentRepository(session).create(document)
+        chunk = _new_chunk(document.doc_id)
+        ChunkRepository(session).create(chunk)
+        task_event = _new_task_event(chunk_id=chunk.chunk_id, scope_id="task-001")
+        TaskEventRepository(session).create(task_event)
+
         repository = MemoryRepository(session)
         memory = MemoryItemModel(
             memory_id=str(uuid.uuid4()),
             memory_type="M1",
+            memory_kind="task_snapshot",
             scope_type="task",
             scope_id="task-001",
             key="deadline",
             content="2026-03-31",
+            source_event_ids_json=[task_event.event_id],
+            evidence_refs_json=[{"chunk_id": chunk.chunk_id}],
             importance=0.9,
+            confidence=0.85,
             status="active",
+            review_window_days=30,
+            user_confirmed_count=0,
+            recall_count=0,
+            decay_score=0.0,
+            promotion_state="promoted",
+            consolidated_from_json=[],
             updated_at=_now() - timedelta(seconds=5),
         )
         repository.create(memory)
@@ -541,21 +675,119 @@ def test_memory_repository_crud(engine: Engine) -> None:
         assert repository.get_by_id(memory.memory_id) is None
 
 
-def test_memory_repository_rejects_m0_persistence(engine: Engine) -> None:
+def test_task_event_repository_crud(engine: Engine) -> None:
+    with Session(engine) as session:
+        source_root = _add_source_root(session, path="C:/docs")
+        document = _new_document("C:/docs/task-event.md", source_root_id=source_root.source_root_id)
+        DocumentRepository(session).create(document)
+        chunk = _new_chunk(document.doc_id)
+        ChunkRepository(session).create(chunk)
+        plan = FileOperationPlanModel(
+            plan_id=str(uuid.uuid4()),
+            operation_type="move",
+            status="draft",
+            item_count=1,
+            risk_level="low",
+            preview_json={"items": [{"from": "a", "to": "b"}]},
+        )
+        PlanRepository(session).create(plan)
+
+        repository = TaskEventRepository(session)
+        first = _new_task_event(
+            chunk_id=chunk.chunk_id,
+            scope_id="task-events",
+            plan_id=plan.plan_id,
+            trace_id="trace-task-events",
+            occurred_at=_now() - timedelta(minutes=1),
+        )
+        second = _new_task_event(
+            chunk_id=chunk.chunk_id,
+            scope_id="task-events",
+            trace_id="trace-task-events",
+            occurred_at=_now(),
+        )
+        repository.create(first)
+        repository.create(second)
+        session.commit()
+
+        fetched = repository.get_by_id(first.event_id)
+        assert fetched is not None
+        assert fetched.related_plan_id == plan.plan_id
+
+        by_business_key = repository.find_by_business_key(
+            trace_id="trace-task-events",
+            stage_id="S1",
+            task_type="seed_demo",
+            scope_type="task",
+            scope_id="task-events",
+        )
+        assert by_business_key is not None
+        assert by_business_key.event_id == second.event_id
+
+        by_scope = repository.list_by_scope(scope_type="task", scope_id="task-events")
+        assert [event.event_id for event in by_scope] == [second.event_id, first.event_id]
+
+        by_trace = repository.list_by_trace("trace-task-events")
+        assert [event.event_id for event in by_trace] == [second.event_id, first.event_id]
+
+
+def test_memory_repository_rejects_non_persistent_memory_types(engine: Engine) -> None:
     with Session(engine) as session:
         repository = MemoryRepository(session)
 
-        with pytest.raises(StorageError, match="M0 session memory must not be persisted"):
+        with pytest.raises(StorageError, match="only M1/M2 memories may be persisted"):
             repository.create(
                 MemoryItemModel(
                     memory_id=str(uuid.uuid4()),
                     memory_type="M0",
-                    scope_type="session",
+                    memory_kind="task_snapshot",
+                    scope_type="task",
                     scope_id="session-001",
                     key="status",
                     content="ready",
+                    source_event_ids_json=["missing-event"],
+                    evidence_refs_json=[],
                     importance=0.5,
+                    confidence=0.5,
                     status="active",
+                    review_window_days=30,
+                    user_confirmed_count=0,
+                    recall_count=0,
+                    decay_score=0.0,
+                    promotion_state="promoted",
+                    consolidated_from_json=[],
+                )
+            )
+
+        session.rollback()
+        assert session.query(MemoryItemModel).count() == 0
+
+
+def test_memory_repository_rejects_missing_task_event_reference(engine: Engine) -> None:
+    with Session(engine) as session:
+        repository = MemoryRepository(session)
+
+        with pytest.raises(StorageError, match="must reference real task events"):
+            repository.create(
+                MemoryItemModel(
+                    memory_id=str(uuid.uuid4()),
+                    memory_type="M1",
+                    memory_kind="task_snapshot",
+                    scope_type="task",
+                    scope_id="task-001",
+                    key="status",
+                    content="ready",
+                    source_event_ids_json=[str(uuid.uuid4())],
+                    evidence_refs_json=[],
+                    importance=0.5,
+                    confidence=0.5,
+                    status="active",
+                    review_window_days=30,
+                    user_confirmed_count=0,
+                    recall_count=0,
+                    decay_score=0.0,
+                    promotion_state="promoted",
+                    consolidated_from_json=[],
                 )
             )
 
@@ -565,54 +797,127 @@ def test_memory_repository_rejects_m0_persistence(engine: Engine) -> None:
 
 def test_memory_list_active_by_scope(engine: Engine) -> None:
     with Session(engine) as session:
+        source_root = _add_source_root(session, path="C:/docs")
+        document = _new_document("C:/docs/memory-list.md", source_root_id=source_root.source_root_id)
+        DocumentRepository(session).create(document)
+        chunk = _new_chunk(document.doc_id)
+        ChunkRepository(session).create(chunk)
+        promoted_event = _new_task_event(chunk_id=chunk.chunk_id, scope_id="task-list-scope")
+        candidate_event = _new_task_event(chunk_id=chunk.chunk_id, scope_id="task-list-scope")
+        other_event = _new_task_event(chunk_id=chunk.chunk_id, scope_id="other-scope")
+        task_events = TaskEventRepository(session)
+        for event in (promoted_event, candidate_event, other_event):
+            task_events.create(event)
+
         repository = MemoryRepository(session)
         scope_id = "task-list-scope"
 
         active_m1 = MemoryItemModel(
             memory_id=str(uuid.uuid4()),
             memory_type="M1",
+            memory_kind="task_snapshot",
             scope_type="task",
             scope_id=scope_id,
             key="goal",
             content="finish report",
+            source_event_ids_json=[promoted_event.event_id],
+            evidence_refs_json=[],
             importance=0.8,
+            confidence=0.9,
             status="active",
+            review_window_days=30,
+            user_confirmed_count=0,
+            recall_count=0,
+            decay_score=0.0,
+            promotion_state="promoted",
+            consolidated_from_json=[],
             updated_at=_now(),
         )
         active_m2 = MemoryItemModel(
             memory_id=str(uuid.uuid4()),
             memory_type="M2",
+            memory_kind="preference_pattern",
             scope_type="task",
             scope_id=scope_id,
             key="style",
             content="concise",
+            source_event_ids_json=[promoted_event.event_id],
+            evidence_refs_json=[],
             importance=0.5,
+            confidence=0.95,
             status="active",
+            review_window_days=30,
+            user_confirmed_count=0,
+            recall_count=0,
+            decay_score=0.0,
+            promotion_state="promoted",
+            consolidated_from_json=[],
+            updated_at=_now(),
+        )
+        candidate_m2 = MemoryItemModel(
+            memory_id=str(uuid.uuid4()),
+            memory_type="M2",
+            memory_kind="preference_pattern",
+            scope_type="task",
+            scope_id=scope_id,
+            key="format",
+            content="bullet list",
+            source_event_ids_json=[candidate_event.event_id],
+            evidence_refs_json=[],
+            importance=0.7,
+            confidence=0.6,
+            status="active",
+            review_window_days=30,
+            user_confirmed_count=0,
+            recall_count=0,
+            decay_score=0.0,
+            promotion_state="candidate",
+            consolidated_from_json=[],
             updated_at=_now(),
         )
         expired_m1 = MemoryItemModel(
             memory_id=str(uuid.uuid4()),
             memory_type="M1",
+            memory_kind="task_snapshot",
             scope_type="task",
             scope_id=scope_id,
             key="old_note",
             content="stale",
+            source_event_ids_json=[promoted_event.event_id],
+            evidence_refs_json=[],
             importance=0.3,
+            confidence=0.4,
             status="expired",
+            review_window_days=30,
+            user_confirmed_count=0,
+            recall_count=0,
+            decay_score=0.8,
+            promotion_state="promoted",
+            consolidated_from_json=[],
             updated_at=_now(),
         )
         other_scope = MemoryItemModel(
             memory_id=str(uuid.uuid4()),
             memory_type="M1",
+            memory_kind="workflow_hint",
             scope_type="task",
             scope_id="other-scope",
             key="unrelated",
             content="noise",
+            source_event_ids_json=[other_event.event_id],
+            evidence_refs_json=[],
             importance=1.0,
+            confidence=0.7,
             status="active",
+            review_window_days=30,
+            user_confirmed_count=0,
+            recall_count=0,
+            decay_score=0.0,
+            promotion_state="promoted",
+            consolidated_from_json=[],
             updated_at=_now(),
         )
-        for item in [active_m1, active_m2, expired_m1, other_scope]:
+        for item in [active_m1, active_m2, candidate_m2, expired_m1, other_scope]:
             repository.create(item)
         session.commit()
 
@@ -622,6 +927,7 @@ def test_memory_list_active_by_scope(engine: Engine) -> None:
         assert len(results) == 2
         assert active_m1.memory_id in result_ids
         assert active_m2.memory_id in result_ids
+        assert candidate_m2.memory_id not in result_ids
         assert expired_m1.memory_id not in result_ids
         assert other_scope.memory_id not in result_ids
         assert results[0].importance >= results[1].importance
@@ -973,14 +1279,36 @@ def test_memory_scope_key_unique_constraint(engine: Engine) -> None:
         repository = MemoryRepository(session)
         base = dict(
             memory_type="M1",
+            memory_kind="task_snapshot",
             scope_type="task",
             scope_id="task-dup",
             key="status",
             content="in progress",
+            source_event_ids_json=[],
+            evidence_refs_json=[],
             importance=0.5,
+            confidence=0.6,
             status="active",
+            review_window_days=30,
+            user_confirmed_count=0,
+            recall_count=0,
+            decay_score=0.0,
+            promotion_state="promoted",
+            consolidated_from_json=[],
         )
-        repository.create(MemoryItemModel(memory_id=str(uuid.uuid4()), **base))
+        source_root = _add_source_root(session, path="C:/docs")
+        document = _new_document("C:/docs/dup.md", source_root_id=source_root.source_root_id)
+        DocumentRepository(session).create(document)
+        chunk = _new_chunk(document.doc_id)
+        ChunkRepository(session).create(chunk)
+        task_event = _new_task_event(chunk_id=chunk.chunk_id, scope_id="task-dup")
+        TaskEventRepository(session).create(task_event)
+        repository.create(
+            MemoryItemModel(
+                memory_id=str(uuid.uuid4()),
+                **{**base, "source_event_ids_json": [task_event.event_id]},
+            )
+        )
         session.commit()
 
         from sqlalchemy.exc import IntegrityError
@@ -989,6 +1317,10 @@ def test_memory_scope_key_unique_constraint(engine: Engine) -> None:
             repository.create(
                 MemoryItemModel(
                     memory_id=str(uuid.uuid4()),
-                    **{**base, "content": "duplicate"},
+                    **{
+                        **base,
+                        "content": "duplicate",
+                        "source_event_ids_json": [task_event.event_id],
+                    },
                 )
             )

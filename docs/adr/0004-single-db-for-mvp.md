@@ -6,7 +6,7 @@
 
 ## 背景
 
-主规范 §4.4 提及数据库分库设计（文档库、知识库、记忆库等），暗示不同领域实体可存储在独立数据库中。
+早期主规范曾提及数据库分库设计（文档库、知识库、记忆库等），暗示不同领域实体可存储在独立数据库中。
 
 S1 存储基线将所有实体（documents、chunks、knowledge_items、relation_edges、memory_items、file_operation_plans、audit_logs）放在同一个 SQLite 文件中。
 

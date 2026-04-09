@@ -10,6 +10,7 @@ from .plan_repository import PlanRepository
 from .relation_repository import RelationRepository
 from .scan_run_repository import ScanRunRepository
 from .source_repository import SourceRepository
+from .task_event_repository import TaskEventRepository
 
 __all__ = [
     "DocumentRepository",
@@ -22,4 +23,5 @@ __all__ = [
     "AuditRepository",
     "SourceRepository",
     "ScanRunRepository",
+    "TaskEventRepository",
 ]

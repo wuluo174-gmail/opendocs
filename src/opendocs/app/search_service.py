@@ -5,9 +5,8 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
-
-from sqlalchemy.engine import Engine
+from typing import TYPE_CHECKING
+from typing import Iterable
 
 from opendocs.app._audit_helpers import (
     build_text_input_audit_detail,
@@ -15,9 +14,7 @@ from opendocs.app._audit_helpers import (
     flush_audit_to_jsonl,
 )
 from opendocs.config.settings import RetrievalSettings
-from opendocs.exceptions import SearchExecutionError
-from opendocs.indexing.hnsw_manager import HnswManager
-from opendocs.retrieval.embedder import LocalNgramEmbedder
+from opendocs.exceptions import RuntimeClosedError, SearchExecutionError
 from opendocs.retrieval.evidence import SearchResponse
 from opendocs.retrieval.evidence_locator import (
     EvidenceLocation,
@@ -30,6 +27,9 @@ from opendocs.retrieval.search_pipeline import SearchPipeline
 from opendocs.storage.db import session_scope
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from opendocs.app.runtime import OpenDocsRuntime
 
 
 @dataclass(frozen=True)
@@ -45,18 +45,18 @@ class SearchService:
 
     def __init__(
         self,
-        engine: Engine,
+        runtime: OpenDocsRuntime,
         *,
-        hnsw_path: Path,
         settings: RetrievalSettings | None = None,
     ) -> None:
-        self._engine = engine
-        embedder = LocalNgramEmbedder()
-        hnsw = HnswManager(hnsw_path, dim=embedder.dim)
-        # Repair dirty/mismatched HNSW on startup — critical for dense fallback
-        hnsw.check_and_repair(engine, embedder=embedder)
-        self._pipeline = SearchPipeline(engine, hnsw, embedder, settings=settings)
+        self._runtime = runtime
+        self._engine = runtime.engine
+        self._semantic_indexer = runtime.semantic_indexer
+        self._settings = settings
         self._locator = EvidenceLocator()
+
+    def _ensure_runtime_open(self) -> None:
+        self._runtime.ensure_open()
 
     def search(
         self,
@@ -66,6 +66,7 @@ class SearchService:
         top_k: int | None = None,
     ) -> SearchResponse:
         """Execute a hybrid search query."""
+        self._ensure_runtime_open()
         if not query or not query.strip():
             raise ValueError("query must not be empty")
 
@@ -77,8 +78,10 @@ class SearchService:
         )
 
         try:
-            response = self._pipeline.execute(query, filters=filters, top_k=top_k)
+            response = self._build_pipeline().execute(query, filters=filters, top_k=top_k)
         except ValueError:
+            raise
+        except RuntimeClosedError:
             raise
         except Exception as exc:
             logger.exception(
@@ -114,15 +117,41 @@ class SearchService:
 
         return response
 
+    def _build_pipeline(self) -> SearchPipeline:
+        """Resolve one fresh search backend from the committed dense artifact."""
+        self._semantic_indexer.ensure_ready()
+        hnsw, embedder = self._semantic_indexer.build_query_backend()
+        return SearchPipeline(self._engine, hnsw, embedder, settings=self._settings)
+
     def locate_evidence(self, doc_id: str, chunk_id: str) -> EvidenceLocation | None:
         """Locate a specific evidence item for citation display."""
+        self._ensure_runtime_open()
         with session_scope(self._engine) as session:
             return self._locator.locate(session, doc_id, chunk_id)
 
     def load_evidence_preview(self, doc_id: str, chunk_id: str) -> EvidencePreview | None:
         """Resolve an in-app preview anchored to the selected citation."""
+        self._ensure_runtime_open()
         with session_scope(self._engine) as session:
             return self._locator.build_preview(session, doc_id, chunk_id)
+
+    def load_evidence_previews(
+        self,
+        references: Iterable[tuple[str, str]],
+    ) -> dict[tuple[str, str], EvidencePreview]:
+        """Batch-load evidence previews for S5 QA/summary orchestration."""
+        self._ensure_runtime_open()
+        resolved: dict[tuple[str, str], EvidencePreview] = {}
+        unique_refs = list(dict.fromkeys(references))
+        if not unique_refs:
+            return resolved
+
+        with session_scope(self._engine) as session:
+            for doc_id, chunk_id in unique_refs:
+                preview = self._locator.build_preview(session, doc_id, chunk_id)
+                if preview is not None:
+                    resolved[(doc_id, chunk_id)] = preview
+        return resolved
 
     def activate_evidence(
         self,
@@ -132,6 +161,7 @@ class SearchService:
         auto_open: bool = True,
     ) -> EvidenceActivation:
         """Load preview content and optionally attempt a real document jump."""
+        self._ensure_runtime_open()
         preview = self.load_evidence_preview(doc_id, chunk_id)
         location = self.locate_evidence(doc_id, chunk_id)
         external_action = None
@@ -149,6 +179,7 @@ class SearchService:
 
     def open_evidence(self, doc_id: str, chunk_id: str) -> ExternalActionResult:
         """Open a citation target without exposing absolute paths to search results."""
+        self._ensure_runtime_open()
         with session_scope(self._engine) as session:
             target = self._locator.resolve_open_target(session, doc_id, chunk_id)
         if target is None:
@@ -163,6 +194,7 @@ class SearchService:
 
     def reveal_evidence(self, doc_id: str, chunk_id: str) -> ExternalActionResult:
         """Reveal a citation target without exposing absolute paths to search results."""
+        self._ensure_runtime_open()
         with session_scope(self._engine) as session:
             target = self._locator.resolve_open_target(session, doc_id, chunk_id)
         if target is None:
@@ -179,6 +211,7 @@ class SearchService:
         char_range: str | None = None,
     ) -> ExternalActionResult:
         """Open a document file with best-effort locator hints."""
+        self._ensure_runtime_open()
         return EvidenceLocator.open_file(
             path,
             page_no=page_no,
@@ -188,6 +221,7 @@ class SearchService:
 
     def reveal_document(self, path: str) -> ExternalActionResult:
         """Reveal the document inside the platform file manager."""
+        self._ensure_runtime_open()
         return EvidenceLocator.reveal_in_file_manager(path)
 
     @staticmethod

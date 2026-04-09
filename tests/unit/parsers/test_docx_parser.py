@@ -59,9 +59,10 @@ class TestDocxParser:
 
     def test_empty_docx(self, tmp_docx_empty: Path) -> None:
         result = self.parser.parse(tmp_docx_empty)
-        assert result.parse_status == "success"
-        # Empty docx may still have some default paragraphs
-        # but all should be empty-text filtered
+        assert result.parse_status == "failed"
+        assert result.paragraphs == []
+        assert result.error is not None
+        assert result.error.code == "no_extractable_text"
 
     def test_corrupted_file(self, tmp_path: Path) -> None:
         """A corrupted .docx should raise ParseFailedError."""
@@ -225,3 +226,18 @@ class TestDocxParser:
         assert result.error.details["parser"] == "DocxParser"
         assert "Intro text." in result.raw_text
         assert "Closing text." in result.raw_text
+
+    def test_whitespace_only_docx_is_failed(self, tmp_path: Path) -> None:
+        from docx import Document  # type: ignore[import-untyped]
+
+        doc = Document()
+        doc.add_paragraph("   ")
+        p = tmp_path / "blank.docx"
+        doc.save(str(p))
+
+        result = self.parser.parse(p)
+
+        assert result.parse_status == "failed"
+        assert result.paragraphs == []
+        assert result.error is not None
+        assert result.error.code == "no_extractable_text"

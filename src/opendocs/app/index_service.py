@@ -1,14 +1,12 @@
 """Application service for index orchestration (S3-T02/T03/T04)."""
 
 from __future__ import annotations
-
-import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
-from sqlalchemy.engine import Engine
 
 from opendocs.app._audit_helpers import create_audit_record, flush_audit_to_jsonl
 from opendocs.app.source_service import SourceService
@@ -16,21 +14,20 @@ from opendocs.domain.models import (
     AuditLogModel,
     ChunkModel,
     DocumentModel,
-    IndexArtifactModel,
     ScanRunModel,
     SourceRootModel,
 )
 from opendocs.indexing.chunker import Chunker
-from opendocs.indexing.hnsw_manager import HnswManager
 from opendocs.indexing.index_builder import IndexBatchResult, IndexBuilder
-from opendocs.indexing.scanner import Scanner, ScanResult
+from opendocs.indexing.scanner import ScanResult
+from opendocs.indexing.semantic_indexer import SemanticArtifactStatus
 from opendocs.indexing.watcher import IndexWatcher
 from opendocs.parsers import create_default_registry
-from opendocs.retrieval.embedder import LocalNgramEmbedder
 from opendocs.storage.db import session_scope
 from opendocs.storage.repositories import SourceRepository
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from opendocs.app.runtime import OpenDocsRuntime
 
 
 @dataclass(frozen=True)
@@ -50,7 +47,18 @@ class IndexStatus:
     total_document_count: int
     active_document_count: int
     total_chunk_count: int
-    hnsw_status: str
+    semantic_mode: str
+    semantic_freshness_status: str
+    semantic_degraded: bool
+    semantic_degraded_reason: str | None
+    semantic_namespace_path: str | None
+    semantic_committed_artifact_path: str | None
+    semantic_committed_generation: int
+    semantic_committed_readable: bool
+    semantic_committed_readability_reason: str | None
+    semantic_build_in_progress: bool
+    semantic_build_started_at: datetime | None
+    semantic_build_lease_expires_at: datetime | None
     last_scan_status: str | None
     last_scan_finished_at: datetime | None
 
@@ -60,32 +68,40 @@ class IndexService:
 
     def __init__(
         self,
-        engine: Engine,
+        runtime: OpenDocsRuntime,
         *,
-        hnsw_path: Path | None = None,
         watch_changes: bool = True,
     ) -> None:
-        self._engine = engine
+        self._runtime = runtime
+        self._engine = runtime.engine
         registry = create_default_registry()
         chunker = Chunker()
-        self._embedder = LocalNgramEmbedder()
+        self._semantic_indexer = runtime.semantic_indexer
+        self._embedder = self._semantic_indexer.embedder
         self._registry = registry
-        self._scanner = Scanner(registry)
         self._watch_changes = watch_changes
         self._watcher: IndexWatcher | None = None
 
-        hnsw: HnswManager | None = None
-        if hnsw_path is not None:
-            hnsw = HnswManager(hnsw_path, dim=self._embedder.dim)
-
         self._builder = IndexBuilder(
-            engine, registry, chunker, hnsw_manager=hnsw, embedder=self._embedder
+            self._engine,
+            registry,
+            chunker,
+            hnsw_manager=self._semantic_indexer.hnsw_manager,
+            embedder=self._embedder,
         )
-        self._hnsw = hnsw
-        self._source_service = SourceService(engine)
+        self._hnsw = self._semantic_indexer.hnsw_manager
+        self._source_service = SourceService(
+            self._engine,
+            hnsw_path=self._semantic_indexer.hnsw_path,
+            runtime=runtime,
+        )
+
+    def _ensure_runtime_open(self) -> None:
+        self._runtime.ensure_open()
 
     def start_watching_active_sources(self, *, debounce_seconds: float = 1.0) -> IndexStatus:
         """Start the runtime watcher for all active sources."""
+        self._ensure_runtime_open()
         self.stop_watching()
 
         if not self._watch_changes:
@@ -100,6 +116,7 @@ class IndexService:
             self._builder,
             self._registry,
             debounce_seconds=debounce_seconds,
+            dense_compensator=self._semantic_indexer.compensate_if_dirty,
         )
         watched_count = watcher.start(sources)
         if watched_count == 0:
@@ -116,6 +133,7 @@ class IndexService:
 
     def get_index_status(self) -> IndexStatus:
         """Report the current indexing and watcher runtime state."""
+        self._ensure_runtime_open()
         with session_scope(self._engine) as session:
             active_source_count = (
                 session.scalar(
@@ -140,14 +158,7 @@ class IndexService:
             last_scan = session.scalar(
                 select(ScanRunModel).order_by(ScanRunModel.started_at.desc()).limit(1)
             )
-            artifact = session.get(IndexArtifactModel, "dense_hnsw")
-
-        if self._hnsw is None:
-            hnsw_status = "unconfigured"
-        elif artifact is None:
-            hnsw_status = "stale"
-        else:
-            hnsw_status = artifact.status
+        artifact_status = self.get_artifact_status()
 
         watched_paths: tuple[str, ...] = ()
         if self._watcher is not None:
@@ -162,15 +173,31 @@ class IndexService:
             total_document_count=int(total_document_count),
             active_document_count=int(active_document_count),
             total_chunk_count=int(total_chunk_count),
-            hnsw_status=hnsw_status,
+            semantic_mode=artifact_status.semantic_mode,
+            semantic_freshness_status=artifact_status.freshness_status,
+            semantic_degraded=artifact_status.degraded,
+            semantic_degraded_reason=artifact_status.degraded_reason,
+            semantic_namespace_path=artifact_status.namespace_path,
+            semantic_committed_artifact_path=artifact_status.committed_artifact_path,
+            semantic_committed_generation=artifact_status.committed_generation,
+            semantic_committed_readable=artifact_status.committed_readable,
+            semantic_committed_readability_reason=artifact_status.committed_readability_reason,
+            semantic_build_in_progress=artifact_status.build_in_progress,
+            semantic_build_started_at=artifact_status.build_started_at,
+            semantic_build_lease_expires_at=artifact_status.build_lease_expires_at,
             last_scan_status=last_scan.status if last_scan is not None else None,
             last_scan_finished_at=last_scan.finished_at if last_scan is not None else None,
         )
 
+    def get_artifact_status(self) -> SemanticArtifactStatus:
+        """Expose the current dense semantic artifact status owned by S3."""
+        self._ensure_runtime_open()
+        return self._semantic_indexer.get_artifact_status()
+
     def full_index_source(self, source_root_id: str) -> IndexBatchResult:
         """First-time full index: scan → index all → detect deleted."""
-        if self._hnsw:
-            self._hnsw.check_and_repair(self._engine, embedder=self._embedder)
+        self._ensure_runtime_open()
+        self._semantic_indexer.ensure_ready()
 
         scan_ctx = self._scan_for_index(source_root_id)
         trace_id = scan_ctx.scan_run.trace_id
@@ -185,16 +212,11 @@ class IndexService:
         self._soft_delete_missing(source_root_id, scan_ctx.scan, trace_id)
 
         # HNSW compensation
-        if self._hnsw and self._hnsw.is_dirty():
-            try:
-                self._hnsw.rebuild_from_db(
-                    self._engine,
-                    embedder=self._embedder,
-                    reason="full_index_compensation",
-                )
-            except Exception:
-                result.hnsw_status = "degraded"
-                logger.warning("HNSW compensation rebuild failed")
+        if self._hnsw:
+            result.dense_reconcile_status = self._semantic_indexer.compensate_if_dirty(
+                reason="full_index_compensation"
+            )
+        self._semantic_indexer.request_generation_lifecycle_reconcile()
 
         audit_record: AuditLogModel | None = None
         with session_scope(self._engine) as session:
@@ -213,7 +235,7 @@ class IndexService:
                     "partial": result.partial_count,
                     "failed": result.failed_count,
                     "skipped": result.skipped_count,
-                    "hnsw_status": result.hnsw_status,
+                    "dense_reconcile_status": result.dense_reconcile_status,
                     "duration_sec": result.duration_sec,
                 },
                 trace_id=trace_id,
@@ -225,8 +247,8 @@ class IndexService:
 
     def update_index_for_changes(self, source_root_id: str) -> IndexBatchResult:
         """Incremental update: scan → diff with DB → index changed."""
-        if self._hnsw:
-            self._hnsw.check_and_repair(self._engine, embedder=self._embedder)
+        self._ensure_runtime_open()
+        self._semantic_indexer.ensure_ready()
 
         scan_ctx = self._scan_for_index(source_root_id)
         trace_id = scan_ctx.scan_run.trace_id
@@ -241,16 +263,11 @@ class IndexService:
         self._soft_delete_missing(source_root_id, scan_ctx.scan, trace_id)
 
         # HNSW compensation
-        if self._hnsw and self._hnsw.is_dirty():
-            try:
-                self._hnsw.rebuild_from_db(
-                    self._engine,
-                    embedder=self._embedder,
-                    reason="incremental_compensation",
-                )
-            except Exception:
-                result.hnsw_status = "degraded"
-                logger.warning("HNSW compensation rebuild failed")
+        if self._hnsw:
+            result.dense_reconcile_status = self._semantic_indexer.compensate_if_dirty(
+                reason="incremental_compensation"
+            )
+        self._semantic_indexer.request_generation_lifecycle_reconcile()
 
         # Batch-level audit for incremental update (mirrors rebuild_index pattern)
         audit_record: AuditLogModel | None = None
@@ -269,7 +286,7 @@ class IndexService:
                     "success": result.success_count,
                     "failed": result.failed_count,
                     "skipped": result.skipped_count,
-                    "hnsw_status": result.hnsw_status,
+                    "dense_reconcile_status": result.dense_reconcile_status,
                     "duration_sec": result.duration_sec,
                 },
                 trace_id=trace_id,
@@ -281,8 +298,8 @@ class IndexService:
 
     def rebuild_index(self, source_root_id: str) -> IndexBatchResult:
         """Full rebuild: force=True, no hash skip, HNSW rebuild from DB."""
-        if self._hnsw:
-            self._hnsw.check_and_repair(self._engine, embedder=self._embedder)
+        self._ensure_runtime_open()
+        self._semantic_indexer.ensure_ready()
 
         scan_ctx = self._scan_for_index(source_root_id)
         trace_id = scan_ctx.scan_run.trace_id
@@ -297,15 +314,10 @@ class IndexService:
 
         # Always rebuild HNSW from DB on full rebuild
         if self._hnsw:
-            try:
-                self._hnsw.rebuild_from_db(
-                    self._engine,
-                    embedder=self._embedder,
-                    reason="service_rebuild_index",
-                )
-            except Exception:
-                result.hnsw_status = "degraded"
-                logger.warning("HNSW rebuild from DB failed")
+            result.dense_reconcile_status = self._semantic_indexer.rebuild(
+                reason="service_rebuild_index"
+            )
+        self._semantic_indexer.request_generation_lifecycle_reconcile()
 
         # Audit for the rebuild
         audit_record: AuditLogModel | None = None
@@ -324,7 +336,7 @@ class IndexService:
                     "success": result.success_count,
                     "failed": result.failed_count,
                     "skipped": result.skipped_count,
-                    "hnsw_status": result.hnsw_status,
+                    "dense_reconcile_status": result.dense_reconcile_status,
                     "duration_sec": result.duration_sec,
                 },
                 trace_id=trace_id,
@@ -333,6 +345,15 @@ class IndexService:
             flush_audit_to_jsonl(audit_record)
 
         return result
+
+    def close(self) -> None:
+        self.stop_watching()
+
+    def __del__(self) -> None:  # pragma: no cover - best-effort cleanup
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _load_source(self, source_root_id: str) -> object:
         """Load source root from DB."""

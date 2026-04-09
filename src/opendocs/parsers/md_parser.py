@@ -7,7 +7,11 @@ from pathlib import Path
 
 from opendocs.domain.document_metadata import DocumentMetadata
 from opendocs.parsers._encoding import read_text_with_fallback
-from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument
+from opendocs.parsers.base import (
+    BaseParser,
+    Paragraph,
+    ParsedDocument,
+)
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
 _FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
@@ -96,7 +100,7 @@ class MdParser(BaseParser):
     def supported_extensions(self) -> list[str]:
         return [".md"]
 
-    def parse(self, file_path: Path) -> ParsedDocument:
+    def _parse_raw(self, file_path: Path) -> ParsedDocument:
         text = read_text_with_fallback(file_path)
 
         title: str | None = None

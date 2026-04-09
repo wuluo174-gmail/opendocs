@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from opendocs.domain.models import MemoryItemModel
+from opendocs.domain.models import MemoryItemModel, TaskEventModel
 from opendocs.exceptions import DeleteNotAllowedError, StorageError
 from opendocs.utils.time import utcnow_naive
 
@@ -15,8 +15,25 @@ class MemoryRepository:
         self._session = session
 
     def create(self, memory_item: MemoryItemModel) -> MemoryItemModel:
-        if memory_item.memory_type == "M0":
-            raise StorageError("M0 session memory must not be persisted; store it in-process only")
+        if memory_item.memory_type not in {"M1", "M2"}:
+            raise StorageError("only M1/M2 memories may be persisted")
+        if memory_item.scope_type == "session":
+            raise StorageError("session-scoped memory must remain in M0 and stay in-process only")
+        if not memory_item.source_event_ids_json:
+            raise StorageError("persisted memory must reference at least one stored task event")
+
+        missing_event_ids = [
+            event_id
+            for event_id in memory_item.source_event_ids_json
+            if self._session.get(TaskEventModel, event_id) is None
+        ]
+        if missing_event_ids:
+            missing_text = ", ".join(missing_event_ids)
+            raise StorageError(
+                "persisted memory must reference real task events before it can be stored: "
+                f"{missing_text}"
+            )
+
         self._session.add(memory_item)
         self._session.flush()
         return memory_item
@@ -31,6 +48,7 @@ class MemoryRepository:
         scope_type: str,
         scope_id: str,
         key: str,
+        include_inactive: bool = False,
     ) -> MemoryItemModel | None:
         statement = select(MemoryItemModel).where(
             MemoryItemModel.memory_type == memory_type,
@@ -38,6 +56,12 @@ class MemoryRepository:
             MemoryItemModel.scope_id == scope_id,
             MemoryItemModel.key == key,
         )
+        if not include_inactive:
+            statement = statement.where(
+                MemoryItemModel.status == "active",
+                MemoryItemModel.promotion_state == "promoted",
+            )
+        statement = statement.order_by(MemoryItemModel.updated_at.desc()).limit(1)
         return self._session.scalar(statement)
 
     def list_active_by_scope(
@@ -51,6 +75,7 @@ class MemoryRepository:
             MemoryItemModel.scope_type == scope_type,
             MemoryItemModel.scope_id == scope_id,
             MemoryItemModel.status == "active",
+            MemoryItemModel.promotion_state == "promoted",
         )
         if memory_type is not None:
             statement = statement.where(MemoryItemModel.memory_type == memory_type)

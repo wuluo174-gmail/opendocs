@@ -533,7 +533,7 @@ class TestTC001:
     ) -> None:
         source = source_service.add_source(corpus_copy)
         result = index_service.full_index_source(source.source_root_id)
-        assert result.hnsw_status == "synced"
+        assert result.dense_reconcile_status == "synced"
 
     def test_exclude_rules_filtering(
         self, source_service: SourceService, corpus_copy: Path

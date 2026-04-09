@@ -18,6 +18,7 @@ from opendocs.app._audit_helpers import (
 )
 from opendocs.domain.document_metadata import DocumentMetadata, merge_document_metadata
 from opendocs.domain.models import AuditLogModel, ChunkModel, DocumentModel, SourceRootModel
+from opendocs.exceptions import ArtifactBuildBusyError
 from opendocs.indexing.chunker import ChunkConfig, Chunker, ChunkResult
 from opendocs.indexing.hnsw_manager import HnswManager
 from opendocs.indexing.scanner import ScannedFile
@@ -47,7 +48,7 @@ class IndexBatchResult:
     skipped_count: int = 0
     results: list[IndexedFileResult] = field(default_factory=list)
     duration_sec: float = 0.0
-    hnsw_status: str = "synced"  # "synced" | "degraded"
+    dense_reconcile_status: str = "synced"  # "synced" | "building" | "degraded"
 
 
 @dataclass
@@ -394,39 +395,10 @@ class IndexBuilder:
 
         # === Phase C: HNSW (after commit, best-effort) ===
         if self._hnsw and (old_chunk_ids or new_chunk_ids):
-            if new_chunk_ids and (
-                self._embedder is None or not hasattr(self._embedder, "embed_batch")
-            ):
-                self._hnsw.mark_dirty()
-                self._hnsw.mark_failed(
-                    self._engine,
-                    embedder=self._embedder,
-                    reason="index_file_no_embedder",
-                    last_error="embedder unavailable for dense update",
-                )
-                logger.warning("HNSW write skipped, embedder unavailable")
-            else:
-                try:
-                    if old_chunk_ids:
-                        self._hnsw.mark_deleted(old_chunk_ids)
-                    if new_chunk_ids:
-                        texts = [cr.text for cr in chunks] if chunks else []
-                        vectors = self._embedder.embed_batch(texts)
-                        self._hnsw.add_chunks_with_vectors(new_chunk_ids, vectors)
-                    self._hnsw.mark_ready(
-                        self._engine,
-                        embedder=self._embedder,
-                        reason="index_file_incremental",
-                    )
-                except Exception as exc:
-                    self._hnsw.mark_dirty()
-                    self._hnsw.mark_failed(
-                        self._engine,
-                        embedder=self._embedder,
-                        reason="index_file_hnsw_update_failed",
-                        last_error=str(exc),
-                    )
-                    logger.warning("HNSW write failed, marked dirty")
+            # Dense HNSW is a committed derived bundle now. Document mutations only
+            # mark it dirty/stale; rebuild promotion happens via the single
+            # rebuild-from-DB path so readers never observe a half-written bundle.
+            self._hnsw.mark_dirty()
 
         assert result is not None
         return result
@@ -483,7 +455,7 @@ class IndexBuilder:
         # HNSW compensation at end of batch
         if self._hnsw and self._hnsw.is_dirty():
             if self._embedder is None or not hasattr(self._embedder, "embed_batch"):
-                batch.hnsw_status = "degraded"
+                batch.dense_reconcile_status = "degraded"
                 logger.warning("HNSW dirty but no embedder available for compensation rebuild")
             else:
                 try:
@@ -492,8 +464,11 @@ class IndexBuilder:
                         embedder=self._embedder,
                         reason="batch_compensation_dirty",
                     )
+                    batch.dense_reconcile_status = "synced"
+                except ArtifactBuildBusyError:
+                    batch.dense_reconcile_status = "building"
                 except Exception:
-                    batch.hnsw_status = "degraded"
+                    batch.dense_reconcile_status = "degraded"
                     logger.warning("HNSW rebuild failed, status=degraded")
 
         batch.duration_sec = time.monotonic() - start
@@ -550,21 +525,7 @@ class IndexBuilder:
             flush_audit_to_jsonl(audit_record)
 
         if self._hnsw and chunk_ids:
-            try:
-                self._hnsw.mark_deleted(chunk_ids)
-                self._hnsw.mark_ready(
-                    self._engine,
-                    embedder=self._embedder,
-                    reason="remove_document_incremental",
-                )
-            except Exception as exc:
-                self._hnsw.mark_dirty()
-                self._hnsw.mark_failed(
-                    self._engine,
-                    embedder=self._embedder,
-                    reason="remove_document_hnsw_update_failed",
-                    last_error=str(exc),
-                )
+            self._hnsw.mark_dirty()
 
         return True
 

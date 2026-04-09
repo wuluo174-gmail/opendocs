@@ -149,11 +149,14 @@ class TestEvidencePanelUi:
         assert window.document_preview_panel.current_preview is not None
         assert "failed to launch external open request" in window.status_label.text()
 
-    def test_search_window_supports_path_and_time_filters(self, qtbot, indexed_search_env) -> None:
-        engine, _, hnsw_path = indexed_search_env
-        from opendocs.app.search_service import SearchService
-
-        window = SearchWindow(SearchService(engine, hnsw_path=hnsw_path))
+    def test_search_window_supports_path_and_time_filters(
+        self,
+        qtbot,
+        indexed_search_env,
+        search_runtime,
+    ) -> None:
+        _engine, _, _hnsw_path = indexed_search_env
+        window = SearchWindow(search_runtime.build_search_service())
         qtbot.addWidget(window)
         window.show()
 

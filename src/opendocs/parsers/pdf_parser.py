@@ -15,7 +15,12 @@ from typing import Literal
 
 from opendocs.domain.document_metadata import DocumentMetadata
 from opendocs.exceptions import ParseFailedError
-from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument, ParseError
+from opendocs.parsers.base import (
+    BaseParser,
+    Paragraph,
+    ParsedDocument,
+    ParseError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +151,7 @@ class PdfParser(BaseParser):
     def supported_extensions(self) -> list[str]:
         return [".pdf"]
 
-    def parse(self, file_path: Path) -> ParsedDocument:
+    def _parse_raw(self, file_path: Path) -> ParsedDocument:
         extraction: _PdfExtraction
         fallback_details: dict[str, object] | None = None
         fallback_message: str | None = None

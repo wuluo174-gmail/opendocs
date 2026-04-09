@@ -37,9 +37,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     # Lazy imports to keep CLI startup fast
-    from opendocs.app.index_service import IndexService
+    from opendocs.app.runtime import OpenDocsRuntime
     from opendocs.app.source_service import SourceService
     from opendocs.exceptions import SchemaCompatibilityError
+    from opendocs.runtime_paths import build_runtime_paths
     from opendocs.storage.db import build_sqlite_engine, init_db
     from opendocs.utils.logging import init_logging
 
@@ -48,9 +49,10 @@ def main(argv: list[str] | None = None) -> int:
         db_path = args.db_path.resolve()
     else:
         db_path = Path(tempfile.mkdtemp()) / "opendocs_rebuild.db"
+    runtime_paths = build_runtime_paths(app_root=db_path.parent, db_path=db_path)
 
     # Set up logging
-    log_dir = db_path.parent / "logs"
+    log_dir = runtime_paths.runtime_root / "logs"
     init_logging(log_dir)
 
     # Initialize database
@@ -62,29 +64,32 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     # Set up HNSW path
-    hnsw_path = db_path.parent / "index" / "hnsw" / "vectors.bin"
+    hnsw_path = runtime_paths.hnsw_path
     hnsw_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Add source (idempotent)
-    source_service = SourceService(engine)
-    source = source_service.add_source(source_path)
+    runtime = OpenDocsRuntime(engine, hnsw_path=hnsw_path)
+    try:
+        # Add source (idempotent)
+        source_service = SourceService(engine, runtime=runtime)
+        source = source_service.add_source(source_path)
 
-    # Fixed: always call rebuild_index (S3-T04 path)
-    index_service = IndexService(engine, hnsw_path=hnsw_path)
-    result = index_service.rebuild_index(source.source_root_id)
+        # Fixed: always call rebuild_index (S3-T04 path)
+        result = runtime.build_index_service().rebuild_index(source.source_root_id)
 
-    # Output summary
-    print(
-        f"Rebuild complete: {result.success_count} success, "
-        f"{result.failed_count} failed, {result.skipped_count} skipped, "
-        f"hnsw={result.hnsw_status}, duration={result.duration_sec:.1f}s"
-    )
+        # Output summary
+        print(
+            f"Rebuild complete: {result.success_count} success, "
+            f"{result.failed_count} failed, {result.skipped_count} skipped, "
+            f"dense_reconcile={result.dense_reconcile_status}, duration={result.duration_sec:.1f}s"
+        )
 
-    # TC-002: individual file failures are expected and recorded, not crash-worthy.
-    # Return 0 if at least some files succeeded; return 1 only if zero succeeded.
-    if result.success_count == 0 and result.total > 0:
-        return 1
-    return 0
+        # TC-002: individual file failures are expected and recorded, not crash-worthy.
+        # Return 0 if at least some files succeeded; return 1 only if zero succeeded.
+        if result.success_count == 0 and result.total > 0:
+            return 1
+        return 0
+    finally:
+        runtime.close()
 
 
 if __name__ == "__main__":

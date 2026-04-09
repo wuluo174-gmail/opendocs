@@ -15,7 +15,7 @@ class TxtParser(BaseParser):
     def supported_extensions(self) -> list[str]:
         return [".txt"]
 
-    def parse(self, file_path: Path) -> ParsedDocument:
+    def _parse_raw(self, file_path: Path) -> ParsedDocument:
         text = read_text_with_fallback(file_path)
 
         # Split by double newline (blank-line separated paragraphs)

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from opendocs.app.index_service import IndexService
+from opendocs.app.runtime import OpenDocsRuntime
 from opendocs.app.search_service import SearchService
 from opendocs.app.source_service import SourceService
 from opendocs.storage.db import build_sqlite_engine, init_db, session_scope
@@ -88,16 +88,20 @@ class TestCitationAccuracy:
 
         init_db(db_path)
         engine = build_sqlite_engine(db_path)
-        source_service = SourceService(engine)
-        index_service = IndexService(engine, hnsw_path=hnsw_path)
+        runtime = OpenDocsRuntime(engine, hnsw_path=hnsw_path)
+        source_service = SourceService(engine, runtime=runtime)
+        index_service = runtime.build_index_service()
 
-        source_a = source_service.add_source(source_root_a)
-        source_b = source_service.add_source(source_root_b)
-        index_service.full_index_source(source_a.source_root_id)
-        index_service.full_index_source(source_b.source_root_id)
+        try:
+            source_a = source_service.add_source(source_root_a)
+            source_b = source_service.add_source(source_root_b)
+            index_service.full_index_source(source_a.source_root_id)
+            index_service.full_index_source(source_b.source_root_id)
 
-        service = SearchService(engine, hnsw_path=hnsw_path)
-        resp = service.search("shared needle", top_k=10)
+            service = runtime.build_search_service()
+            resp = service.search("shared needle", top_k=10)
+        finally:
+            runtime.close()
 
         report_paths = [result.path for result in resp.results if result.title == "Report"]
         assert len(report_paths) >= 2
@@ -108,18 +112,19 @@ class TestCitationAccuracy:
     def test_locate_evidence_rejects_mismatched_doc_and_chunk(self, indexed_search_env) -> None:
         """EvidenceLocation must not stitch fields from two different documents."""
         engine, _, hnsw_path = indexed_search_env
-        service = SearchService(engine, hnsw_path=hnsw_path)
+        with OpenDocsRuntime(engine, hnsw_path=hnsw_path) as runtime:
+            service = runtime.build_search_service()
 
-        with session_scope(engine) as session:
-            rows = session.execute(
-                text(
-                    "SELECT d.doc_id, c.chunk_id "
-                    "FROM documents d "
-                    "JOIN chunks c ON d.doc_id = c.doc_id "
-                    "ORDER BY d.path, c.chunk_index"
-                )
-            ).fetchall()
+            with session_scope(engine) as session:
+                rows = session.execute(
+                    text(
+                        "SELECT d.doc_id, c.chunk_id "
+                        "FROM documents d "
+                        "JOIN chunks c ON d.doc_id = c.doc_id "
+                        "ORDER BY d.path, c.chunk_index"
+                    )
+                ).fetchall()
 
-        assert len(rows) >= 2
-        loc = service.locate_evidence(rows[0][0], rows[-1][1])
-        assert loc is None
+            assert len(rows) >= 2
+            loc = service.locate_evidence(rows[0][0], rows[-1][1])
+            assert loc is None

@@ -24,6 +24,11 @@
       "lexicon_id": "nlp",
       "canonical_query": "自然语言处理",
       "aliases": ["NLP", "language processing"]
+    },
+    {
+      "lexicon_id": "budget_plan",
+      "canonical_query": "budget plan",
+      "aliases": ["cost plan", "project budget", "budget", "预算计划", "预算方案"]
     }
   ]
 }

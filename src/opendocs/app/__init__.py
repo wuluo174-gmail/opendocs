@@ -8,6 +8,10 @@ from .memory_service import MemoryService
 
 
 def __getattr__(name: str) -> object:
+    if name == "OpenDocsRuntime":
+        from .runtime import OpenDocsRuntime
+
+        return OpenDocsRuntime
     if name == "IndexService":
         from .index_service import IndexService
 
@@ -20,6 +24,10 @@ def __getattr__(name: str) -> object:
         from .search_service import SearchService
 
         return SearchService
+    if name == "QAService":
+        from .qa_service import QAService
+
+        return QAService
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -27,6 +35,8 @@ __all__ = [
     "FileOperationService",
     "IndexService",
     "MemoryService",
+    "OpenDocsRuntime",
+    "QAService",
     "SearchService",
     "SourceService",
 ]

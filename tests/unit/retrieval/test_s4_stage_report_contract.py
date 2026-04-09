@@ -63,8 +63,7 @@ class TestS4StageReportContract:
             "## 2. 关键实现说明",
         )
         report_paths = {
-            ref.split("#", 1)[0].rstrip("/")
-            for ref in REPO_PATH_RE.findall(section_text)
+            ref.split("#", 1)[0].rstrip("/") for ref in REPO_PATH_RE.findall(section_text)
         }
 
         missing_paths = sorted(path for path in report_paths if not (repo_root / path).exists())

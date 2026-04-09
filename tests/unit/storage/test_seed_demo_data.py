@@ -19,6 +19,7 @@ from opendocs.domain.models import (
     MemoryItemModel,
     RelationEdgeModel,
     SourceRootModel,
+    TaskEventModel,
 )
 from opendocs.storage.db import build_sqlite_engine, init_db
 from opendocs.utils.path_facts import (
@@ -63,6 +64,7 @@ def _count_all(engine: Engine) -> dict[str, int]:
             "chunks": session.scalar(select(func.count()).select_from(ChunkModel)),
             "knowledge_items": session.scalar(select(func.count()).select_from(KnowledgeItemModel)),
             "relation_edges": session.scalar(select(func.count()).select_from(RelationEdgeModel)),
+            "task_events": session.scalar(select(func.count()).select_from(TaskEventModel)),
             "memory_items": session.scalar(select(func.count()).select_from(MemoryItemModel)),
             "file_operation_plans": session.scalar(
                 select(func.count()).select_from(FileOperationPlanModel)
@@ -78,6 +80,7 @@ def test_seed_demo_data_inserts_records(db_path: Path) -> None:
         "chunks": 1,
         "knowledge_items": 1,
         "relation_edges": 1,
+        "task_events": 1,
         "memory_items": 1,
         "file_operation_plans": 1,
         "audit_logs": 1,
@@ -90,6 +93,7 @@ def test_seed_demo_data_inserts_records(db_path: Path) -> None:
             "chunks": 1,
             "knowledge_items": 1,
             "relation_edges": 1,
+            "task_events": 1,
             "memory_items": 1,
             "file_operation_plans": 1,
             "audit_logs": 1,
@@ -113,6 +117,12 @@ def test_seed_demo_data_inserts_records(db_path: Path) -> None:
             assert document.directory_path == str(Path(document.path).parent).replace("\\", "/")
             assert document.relative_directory_path == ""
             assert document.display_path == "demo/project_overview.md"
+            task_event = session.scalar(select(TaskEventModel))
+            memory = session.scalar(select(MemoryItemModel))
+            assert task_event is not None
+            assert memory is not None
+            assert memory.source_event_ids_json == [task_event.event_id]
+            assert memory.promotion_state == "promoted"
     finally:
         engine.dispose()
 
@@ -126,6 +136,7 @@ def test_seed_demo_data_is_idempotent(db_path: Path) -> None:
         "chunks": 0,
         "knowledge_items": 0,
         "relation_edges": 0,
+        "task_events": 0,
         "memory_items": 0,
         "file_operation_plans": 0,
         "audit_logs": 0,
@@ -193,15 +204,43 @@ def test_seed_demo_data_handles_existing_business_keys(db_path: Path) -> None:
                 )
             )
             session.add(
+                TaskEventModel(
+                    event_id=str(uuid.uuid4()),
+                    trace_id=_SEED_MODULE.DEMO_TASK_TRACE_ID,
+                    stage_id=_SEED_MODULE.DEMO_TASK_STAGE_ID,
+                    task_type=_SEED_MODULE.DEMO_TASK_TYPE,
+                    scope_type="task",
+                    scope_id=_SEED_MODULE.DEMO_MEMORY_SCOPE_ID,
+                    input_summary="existing input",
+                    output_summary="existing output",
+                    related_chunk_ids_json=[],
+                    evidence_refs_json=[],
+                    persisted_at=now,
+                    occurred_at=now,
+                )
+            )
+            session.flush()
+            existing_event_id = session.scalar(select(TaskEventModel.event_id))
+            session.add(
                 MemoryItemModel(
                     memory_id=str(uuid.uuid4()),
                     memory_type="M1",
+                    memory_kind="task_snapshot",
                     scope_type="task",
                     scope_id=_SEED_MODULE.DEMO_MEMORY_SCOPE_ID,
                     key=_SEED_MODULE.DEMO_MEMORY_KEY,
                     content="Bob",
+                    source_event_ids_json=[existing_event_id],
+                    evidence_refs_json=[],
                     importance=0.7,
+                    confidence=0.8,
                     status="active",
+                    review_window_days=30,
+                    user_confirmed_count=0,
+                    recall_count=0,
+                    decay_score=0.0,
+                    promotion_state="promoted",
+                    consolidated_from_json=[],
                     updated_at=now,
                 )
             )
@@ -210,6 +249,7 @@ def test_seed_demo_data_handles_existing_business_keys(db_path: Path) -> None:
         inserted = seed_demo_data(db_path)
         assert inserted["documents"] == 0
         assert inserted["chunks"] == 0
+        assert inserted["task_events"] == 0
         assert inserted["memory_items"] == 0
     finally:
         engine.dispose()

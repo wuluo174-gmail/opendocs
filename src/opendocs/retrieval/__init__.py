@@ -1,7 +1,7 @@
 """Retrieval package — S4 hybrid search, filters, evidence, and citation."""
 
 from opendocs.retrieval.dense_searcher import DenseSearcher
-from opendocs.retrieval.embedder import LocalNgramEmbedder
+from opendocs.retrieval.embedder import LocalNgramEmbedder, LocalSemanticEmbedder
 from opendocs.retrieval.evidence import Citation, SearchResponse, SearchResult
 from opendocs.retrieval.evidence_locator import EvidenceLocation, EvidenceLocator
 from opendocs.retrieval.filters import SearchFilter
@@ -17,6 +17,7 @@ __all__ = [
     "EvidenceLocation",
     "FtsSearcher",
     "LocalNgramEmbedder",
+    "LocalSemanticEmbedder",
     "PreparedQuery",
     "QueryPreprocessor",
     "ScoreBreakdown",

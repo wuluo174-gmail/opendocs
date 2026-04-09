@@ -1,6 +1,6 @@
 ﻿# OpenDocs
 
-OpenDocs 是本地优先、证据优先的桌面 AI 文档管理系统。本仓库当前已经落地 S0-S4 的基础实现，并正在收口这些阶段的工程与验收问题。
+OpenDocs 是本地优先、证据优先的桌面 AI 文档管理系统。本仓库当前已经存在覆盖多个阶段的实现与测试素材；但可信基线仍以现规范、阶段门禁和验收证据为准。当前 CLI 已暴露 `source / watch / search / qa` 主链路，后续阶段继续补齐归档、Provider、记忆和总体验收。
 
 ## 安装
 
@@ -119,11 +119,40 @@ py -3.11 -m pip install -e ".[dev]"
   --time-to 2026-03-20T23:59:59
 ```
 
+执行证据问答：
+
+```bash
+.venv/bin/python -m opendocs qa answer "Atlas 项目负责人是谁？" \
+  --db .tmp/opendocs.db \
+  --hnsw .tmp/chunks.hnsw
+```
+
+基于查询做多文档摘要：
+
+```bash
+.venv/bin/python -m opendocs qa summary \
+  --query "Atlas 关键决策" \
+  --db .tmp/opendocs.db \
+  --hnsw .tmp/chunks.hnsw
+```
+
+提取洞察并预览 Markdown 导出；如需落盘，追加 `--export-path ... --confirmed`：
+
+```bash
+.venv/bin/python -m opendocs qa insights \
+  --query "Atlas 决策 风险 待办" \
+  --preview-export \
+  --export-title "Atlas 洞察导出" \
+  --db .tmp/opendocs.db \
+  --hnsw .tmp/chunks.hnsw
+```
+
 ## 测试
 
 执行阶段基线测试：
 
 ```bash
+.venv/bin/python scripts/run_static_checks.py
 .venv/bin/pytest -q
 ```
 
@@ -132,6 +161,7 @@ py -3.11 -m pip install -e ".[dev]"
 ```bash
 .venv/bin/python -m opendocs --help
 .venv/bin/python -m opendocs
+.venv/bin/python scripts/run_static_checks.py
 .venv/bin/pytest -q
 ```
 

@@ -6,6 +6,7 @@ import os
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sqlalchemy.engine import Engine
 
@@ -13,11 +14,16 @@ from opendocs.app._audit_helpers import create_audit_record, flush_audit_to_json
 from opendocs.domain.document_metadata import DocumentMetadata
 from opendocs.domain.models import (
     AuditLogModel,
-    IndexArtifactModel,
     ScanRunModel,
     SourceRootModel,
 )
-from opendocs.exceptions import OpenDocsError, SourceNotFoundError, SourceOverlapError
+from opendocs.exceptions import (
+    OpenDocsError,
+    RuntimeOwnershipError,
+    SourceNotFoundError,
+    SourceOverlapError,
+)
+from opendocs.indexing.semantic_indexer import resolve_semantic_namespace_path
 from opendocs.indexing.scanner import ExcludeRules, Scanner, ScanResult
 from opendocs.parsers import create_default_registry
 from opendocs.storage.db import session_scope
@@ -25,6 +31,9 @@ from opendocs.storage.repositories import ScanRunRepository, SourceRepository
 from opendocs.storage.repositories.source_repository import INDEX_RELEVANT_SOURCE_FIELDS
 from opendocs.utils.path_facts import derive_source_display_root
 from opendocs.utils.time import utcnow_naive
+
+if TYPE_CHECKING:
+    from opendocs.app.runtime import OpenDocsRuntime
 
 _UNSET = object()
 
@@ -47,9 +56,16 @@ class _SourceUpdatePlan:
 class SourceService:
     """Manage document source roots and scanning."""
 
-    def __init__(self, engine: Engine, *, hnsw_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        *,
+        hnsw_path: Path | None = None,
+        runtime: OpenDocsRuntime | None = None,
+    ) -> None:
         self._engine = engine
         self._hnsw_path = hnsw_path
+        self._runtime = runtime
         self._scanner = Scanner(create_default_registry())
 
     def add_source(
@@ -63,6 +79,7 @@ class SourceService:
         reindex_on_change: bool = True,
     ) -> SourceRootModel:
         """Add a source root. Existing paths are updated in place."""
+        self._ensure_runtime_open_if_bound()
         resolved = self._require_readable_directory(path)
 
         audit_record: AuditLogModel | None = None
@@ -82,6 +99,8 @@ class SourceService:
                         recursive,
                     ),
                 )
+                if update_plan.requires_reindex and reindex_on_change:
+                    self._require_runtime_owner_for_reindex()
                 changed = (
                     repo.update(existing, **update_plan.updates) if update_plan.updates else False
                 )
@@ -150,6 +169,7 @@ class SourceService:
         reindex_on_change: bool = True,
     ) -> SourceRootModel:
         """Update an existing source root configuration."""
+        self._ensure_runtime_open_if_bound()
         audit_record: AuditLogModel | None = None
         reindex_source_id: str | None = None
         with session_scope(self._engine) as session:
@@ -168,6 +188,8 @@ class SourceService:
                     recursive,
                 ),
             )
+            if update_plan.requires_reindex and reindex_on_change:
+                self._require_runtime_owner_for_reindex()
             changed = repo.update(source, **update_plan.updates) if update_plan.updates else False
             if changed:
                 if update_plan.requires_reindex:
@@ -201,6 +223,7 @@ class SourceService:
         reindex_on_change: bool = True,
     ) -> SourceRootModel:
         """Update an existing source root using the user-owned source path."""
+        self._ensure_runtime_open_if_bound()
         source = self.get_source_by_path(path)
         if source is None:
             resolved = self._resolve_source_path(path)
@@ -318,26 +341,27 @@ class SourceService:
             requires_reindex=requires_reindex,
         )
 
-    def _trigger_reindex(self, source_root_id: str) -> None:
-        from opendocs.app.index_service import IndexService
+    def _require_runtime_owner_for_reindex(self) -> None:
+        if self._runtime is None:
+            raise RuntimeOwnershipError(
+                "source reindex requires an explicit OpenDocsRuntime owner; "
+                "create runtime at the entrypoint and inject it into SourceService"
+            )
+        self._runtime.ensure_open()
 
-        resolved_hnsw_path = self._resolve_hnsw_path()
-        IndexService(
-            self._engine,
-            hnsw_path=resolved_hnsw_path,
-        ).update_index_for_changes(source_root_id)
+    def _trigger_reindex(self, source_root_id: str) -> None:
+        self._require_runtime_owner_for_reindex()
+        service = self._runtime.build_index_service()
+        service.update_index_for_changes(source_root_id)
 
     def _resolve_hnsw_path(self) -> Path | None:
         if self._hnsw_path is not None:
             return self._hnsw_path
-        with session_scope(self._engine) as session:
-            artifact = session.get(IndexArtifactModel, "dense_hnsw")
-            if artifact is None or not artifact.artifact_path:
-                return None
-            return Path(artifact.artifact_path)
+        return resolve_semantic_namespace_path(self._engine)
 
     def scan_source(self, source_root_id: str) -> tuple[ScanResult, ScanRunModel]:
         """Scan a source root. Returns (ScanResult, ScanRunModel) for TC-001."""
+        self._ensure_runtime_open_if_bound()
         request = self._load_scan_request(source_root_id)
         scan_run = self._create_running_scan_run(request)
 
@@ -500,14 +524,30 @@ class SourceService:
         return SourceNotFoundError(f"source root scan failed: {path}: {error}")
 
     def list_sources(self) -> list[SourceRootModel]:
+        self._ensure_runtime_open_if_bound()
         with session_scope(self._engine) as session:
             return SourceRepository(session).list_active()
 
     def get_source(self, source_root_id: str) -> SourceRootModel | None:
+        self._ensure_runtime_open_if_bound()
         with session_scope(self._engine) as session:
             return SourceRepository(session).get_by_id(source_root_id)
 
     def get_source_by_path(self, path: str | Path) -> SourceRootModel | None:
+        self._ensure_runtime_open_if_bound()
         resolved = self._resolve_source_path(path)
         with session_scope(self._engine) as session:
             return SourceRepository(session).get_by_path(str(resolved))
+
+    def list_scan_runs(self, source_root_id: str) -> list[ScanRunModel]:
+        """List persisted scan runs for one source root in reverse chronological order."""
+        self._ensure_runtime_open_if_bound()
+        with session_scope(self._engine) as session:
+            source = SourceRepository(session).get_by_id(source_root_id)
+            if source is None:
+                raise SourceNotFoundError(f"source root not found: {source_root_id}")
+            return ScanRunRepository(session).list_by_source(source_root_id)
+
+    def _ensure_runtime_open_if_bound(self) -> None:
+        if self._runtime is not None:
+            self._runtime.ensure_open()

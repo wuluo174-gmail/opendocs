@@ -43,9 +43,11 @@ class TestTxtParser:
 
     def test_empty_file(self, tmp_txt_empty: Path) -> None:
         result = self.parser.parse(tmp_txt_empty)
-        assert result.parse_status == "success"
+        assert result.parse_status == "failed"
         assert result.paragraphs == []
         assert result.title is None
+        assert result.error is not None
+        assert result.error.code == "no_extractable_text"
 
     def test_page_no_is_none(self, tmp_txt: Path) -> None:
         result = self.parser.parse(tmp_txt)
@@ -90,3 +92,14 @@ class TestTxtParser:
         result = self.parser.parse(p)
         assert result.parse_status == "success"
         assert "测试文件" in result.raw_text
+
+    def test_whitespace_only_file_is_failed(self, tmp_path: Path) -> None:
+        p = tmp_path / "blank.txt"
+        p.write_text(" \n\t \n", encoding="utf-8")
+
+        result = self.parser.parse(p)
+
+        assert result.parse_status == "failed"
+        assert result.paragraphs == []
+        assert result.error is not None
+        assert result.error.code == "no_extractable_text"

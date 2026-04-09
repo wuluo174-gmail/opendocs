@@ -144,6 +144,8 @@ class TestChunkerShortDoc:
         chunks = _chunk(doc)
         assert len(chunks) == 1
         assert chunks[0].text == "Some text"
+        assert chunks[0].paragraph_start is None
+        assert chunks[0].paragraph_end is None
 
 
 class TestChunkerParagraphBoundary:

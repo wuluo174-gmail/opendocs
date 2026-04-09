@@ -48,6 +48,18 @@ class IndexCorruptedError(StorageError):
     """E_INDEX_CORRUPTED — 向量或 FTS 索引损坏，需重建。"""
 
 
+class ArtifactBuildBusyError(StorageError):
+    """E_ARTIFACT_BUILD_BUSY — 派生工件已有活动构建租约。"""
+
+
+class RuntimeOwnershipError(OpenDocsError):
+    """E_RUNTIME_OWNERSHIP_REQUIRED — 该操作必须由显式 runtime owner 驱动。"""
+
+
+class RuntimeClosedError(OpenDocsError):
+    """E_RUNTIME_CLOSED — runtime 已关闭，禁止继续复用其服务能力。"""
+
+
 class EvidenceInsufficientError(OpenDocsError):
     """E_EVIDENCE_INSUFFICIENT — 证据不足，拒绝给出事实性回答。"""
 

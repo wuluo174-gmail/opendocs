@@ -7,7 +7,12 @@ from pathlib import Path
 
 from opendocs.domain.document_metadata import DocumentMetadata
 from opendocs.exceptions import ParseFailedError
-from opendocs.parsers.base import BaseParser, Paragraph, ParsedDocument, ParseError
+from opendocs.parsers.base import (
+    BaseParser,
+    Paragraph,
+    ParsedDocument,
+    ParseError,
+)
 
 _HEADING_STYLE_RE = re.compile(r"^Heading\s*(\d+)$", re.IGNORECASE)
 
@@ -40,7 +45,7 @@ class DocxParser(BaseParser):
     def supported_extensions(self) -> list[str]:
         return [".docx"]
 
-    def parse(self, file_path: Path) -> ParsedDocument:
+    def _parse_raw(self, file_path: Path) -> ParsedDocument:
         try:
             from docx import Document  # type: ignore[import-untyped]
         except ImportError as exc:

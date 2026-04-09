@@ -16,7 +16,7 @@ def normalize_text(text: str) -> str:
     Steps:
     1. Unicode NFC normalization (compose characters canonically)
     2. Normalize full-width ASCII characters to half-width equivalents
-    3. Collapse runs of whitespace (preserving paragraph breaks)
+    3. Collapse runs of spaces (preserving paragraph breaks and tabs)
     """
     # NFC normalization – important for CJK text
     text = unicodedata.normalize("NFC", text)
@@ -24,8 +24,10 @@ def normalize_text(text: str) -> str:
     # Full-width ASCII → half-width (U+FF01..U+FF5E → U+0021..U+007E)
     text = _fullwidth_to_halfwidth(text)
 
-    # Collapse whitespace runs within lines (preserve \n structure)
-    text = re.sub(r"[^\S\n]+", " ", text)
+    # Collapse space-like runs within lines while preserving tabs. Tabs can
+    # carry layout meaning in DOCX-derived text and should remain truthful to
+    # the parser output instead of being silently rewritten as plain spaces.
+    text = re.sub(r"[ \f\v\r]+", " ", text)
 
     # Strip trailing whitespace per line
     text = "\n".join(line.rstrip() for line in text.split("\n"))

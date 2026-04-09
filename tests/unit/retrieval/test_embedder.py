@@ -1,85 +1,112 @@
-"""Unit tests for LocalNgramEmbedder."""
+"""Unit tests for the local corpus-trained semantic embedder."""
+
+from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from opendocs.retrieval.embedder import LocalNgramEmbedder, normalize_embedding_text
+from opendocs.retrieval.embedder import (
+    LocalSemanticEmbedder,
+    build_dense_model_path,
+    normalize_embedding_text,
+)
 
 
 @pytest.fixture()
-def embedder() -> LocalNgramEmbedder:
-    return LocalNgramEmbedder()
-
-
-class TestDimension:
-    def test_default_dim(self, embedder: LocalNgramEmbedder) -> None:
-        assert embedder.dim == 128
-
-    def test_output_shape(self, embedder: LocalNgramEmbedder) -> None:
-        vec = embedder.embed_text("hello world")
-        assert vec.shape == (128,)
-        assert vec.dtype == np.float32
+def embedder(tmp_path) -> LocalSemanticEmbedder:
+    model_path = build_dense_model_path(tmp_path / "test.hnsw")
+    return LocalSemanticEmbedder(model_path=model_path)
 
 
 class TestNormalization:
     def test_normalize_embedding_text_owns_casefolded_dense_semantics(self) -> None:
         assert normalize_embedding_text(" ＡＩ ") == "ai"
 
-    def test_l2_normalized(self, embedder: LocalNgramEmbedder) -> None:
-        vec = embedder.embed_text("test document text")
-        norm = np.linalg.norm(vec)
-        assert abs(norm - 1.0) < 1e-5
-
-    def test_empty_returns_zero(self, embedder: LocalNgramEmbedder) -> None:
+    def test_empty_returns_zero_without_model(self, embedder: LocalSemanticEmbedder) -> None:
         vec = embedder.embed_text("")
         assert np.allclose(vec, 0.0)
 
-    def test_whitespace_returns_zero(self, embedder: LocalNgramEmbedder) -> None:
-        vec = embedder.embed_text("   ")
-        assert np.allclose(vec, 0.0)
 
+class TestTrainingLifecycle:
+    def test_default_dim(self, embedder: LocalSemanticEmbedder) -> None:
+        assert embedder.dim == 128
 
-class TestDeterminism:
-    def test_same_text_same_vector(self, embedder: LocalNgramEmbedder) -> None:
-        v1 = embedder.embed_text("项目进度报告")
-        v2 = embedder.embed_text("项目进度报告")
-        assert np.allclose(v1, v2)
-
-    def test_case_and_fullwidth_variants_share_the_same_vector(
-        self,
-        embedder: LocalNgramEmbedder,
-    ) -> None:
-        canonical = embedder.embed_text("AI")
-        lowercase = embedder.embed_text("ai")
-        fullwidth = embedder.embed_text("ＡＩ")
-        assert np.allclose(canonical, lowercase)
-        assert np.allclose(canonical, fullwidth)
-
-    def test_different_text_different_vector(self, embedder: LocalNgramEmbedder) -> None:
-        v1 = embedder.embed_text("项目进度报告")
-        v2 = embedder.embed_text("meeting notes summary")
-        assert not np.allclose(v1, v2)
-
-
-class TestCJK:
-    def test_cjk_non_zero(self, embedder: LocalNgramEmbedder) -> None:
-        vec = embedder.embed_text("项目进度")
+    def test_fit_makes_embeddings_non_zero(self, embedder: LocalSemanticEmbedder) -> None:
+        embedder.fit_corpus(
+            [
+                "Project budget approved for the next phase.",
+                "Authentication module review completed.",
+            ]
+        )
+        vec = embedder.embed_text("budget plan")
+        assert vec.shape == (128,)
         assert np.linalg.norm(vec) > 0
 
-    def test_cjk_similarity(self, embedder: LocalNgramEmbedder) -> None:
-        q = embedder.embed_text("项目")
-        doc = embedder.embed_text("本项目的目标是开发文档管理工具")
-        other = embedder.embed_text("weekly status report completed")
-        sim_match = float(np.dot(q, doc))
-        sim_other = float(np.dot(q, other))
-        assert sim_match > sim_other
+    def test_fit_is_deterministic_for_same_corpus(self, tmp_path) -> None:
+        corpus = [
+            "Atlas 项目负责人是王敏。",
+            "Authentication module review completed.",
+        ]
+        first = LocalSemanticEmbedder(model_path=build_dense_model_path(tmp_path / "a.hnsw"))
+        second = LocalSemanticEmbedder(model_path=build_dense_model_path(tmp_path / "b.hnsw"))
+
+        first.fit_corpus(corpus)
+        second.fit_corpus(corpus)
+
+        assert first.fingerprint == second.fingerprint
+        assert np.allclose(
+            first.embed_text("Atlas 项目负责人"),
+            second.embed_text("Atlas 项目负责人"),
+        )
+
+    def test_model_can_roundtrip_through_disk(self, tmp_path) -> None:
+        model_path = build_dense_model_path(tmp_path / "roundtrip.hnsw")
+        embedder = LocalSemanticEmbedder(model_path=model_path)
+        corpus = [
+            "Project budget approved for the next phase.",
+            "Authentication module review completed.",
+        ]
+        embedder.fit_corpus(corpus)
+        expected = embedder.embed_text("cost plan")
+        expected_fingerprint = embedder.fingerprint
+        embedder.save_model()
+
+        reloaded = LocalSemanticEmbedder(model_path=model_path)
+        actual = reloaded.embed_text("cost plan")
+
+        assert reloaded.fingerprint == expected_fingerprint
+        assert np.allclose(actual, expected)
 
 
-class TestBatch:
-    def test_batch_matches_single(self, embedder: LocalNgramEmbedder) -> None:
-        texts = ["hello", "world", "项目"]
-        batch = embedder.embed_batch(texts)
-        assert batch.shape == (3, 128)
-        for i, t in enumerate(texts):
-            single = embedder.embed_text(t)
-            assert np.allclose(batch[i], single)
+class TestSemanticBehavior:
+    def test_runtime_owned_budget_concept_bridges_cost_plan_and_budget(
+        self,
+        embedder: LocalSemanticEmbedder,
+    ) -> None:
+        embedder.fit_corpus(
+            [
+                "Project budget approved for the next phase.",
+                "Identity provider integration is pending review.",
+            ]
+        )
+        query = embedder.embed_text("cost plan")
+        budget_doc = embedder.embed_text("Project budget approved for the next phase.")
+        unrelated_doc = embedder.embed_text("Identity provider integration is pending review.")
+
+        assert float(np.dot(query, budget_doc)) > float(np.dot(query, unrelated_doc))
+
+    def test_runtime_owned_login_concept_bridges_cross_language_aliases(
+        self,
+        embedder: LocalSemanticEmbedder,
+    ) -> None:
+        embedder.fit_corpus(
+            [
+                "Completed authentication module review and testing.",
+                "Weekly status update about deployment progress.",
+            ]
+        )
+        query = embedder.embed_text("身份验证模块")
+        auth_doc = embedder.embed_text("Completed authentication module review and testing.")
+        other_doc = embedder.embed_text("Weekly status update about deployment progress.")
+
+        assert float(np.dot(query, auth_doc)) > float(np.dot(query, other_doc))

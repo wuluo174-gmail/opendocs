@@ -93,8 +93,8 @@ class ChunkResult:
     char_start: int
     char_end: int
     page_no: int | None
-    paragraph_start: int
-    paragraph_end: int
+    paragraph_start: int | None
+    paragraph_end: int | None
     heading_path: str | None
     token_estimate: int
     doc_id: str
@@ -145,8 +145,8 @@ class Chunker:
                     char_start=0,
                     char_end=len(doc.raw_text),
                     page_no=None,
-                    paragraph_start=0,
-                    paragraph_end=0,
+                    paragraph_start=None,
+                    paragraph_end=None,
                     heading_path=None,
                     token_estimate=_estimate_tokens(doc.raw_text),
                     doc_id=doc_id,

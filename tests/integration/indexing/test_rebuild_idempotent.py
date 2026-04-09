@@ -17,10 +17,21 @@ from opendocs.indexing.hnsw_manager import HnswManager
 from opendocs.indexing.index_builder import IndexBuilder
 from opendocs.indexing.scanner import Scanner
 from opendocs.parsers import create_default_registry
-from opendocs.retrieval.embedder import LocalNgramEmbedder
+from opendocs.retrieval.embedder import LocalSemanticEmbedder, build_dense_model_path
 from opendocs.storage.db import session_scope
 from opendocs.utils.path_facts import derive_source_display_root
 from opendocs.utils.time import utcnow_naive
+
+
+def _committed_hnsw_path(engine: Engine) -> Path:
+    with session_scope(engine) as session:
+        artifact_path = session.execute(
+            text(
+                "SELECT bundle_path FROM index_artifact_generations "
+                "WHERE artifact_name = 'dense_hnsw' AND state = 'committed'"
+            )
+        ).scalar_one()
+    return Path(artifact_path)
 
 
 class TestRebuildIdempotent:
@@ -145,11 +156,12 @@ class TestRebuildIdempotent:
         source_service: SourceService,
         index_service: IndexService,
         engine: Engine,
+        hnsw_path: Path,
         corpus_copy: Path,
     ) -> None:
         source = source_service.add_source(corpus_copy)
         result = index_service.rebuild_index(source.source_root_id)
-        assert result.hnsw_status == "synced"
+        assert result.dense_reconcile_status == "synced"
         with session_scope(engine) as session:
             row = session.execute(
                 text(
@@ -158,8 +170,9 @@ class TestRebuildIdempotent:
                 )
             ).one()
         assert row[0] == "ready"
-        assert row[1] == LocalNgramEmbedder.MODEL_NAME
-        assert row[2] == LocalNgramEmbedder().fingerprint
+        embedder = LocalSemanticEmbedder(model_path=build_dense_model_path(_committed_hnsw_path(engine)))
+        assert row[1] == LocalSemanticEmbedder.MODEL_NAME
+        assert row[2] == embedder.fingerprint
 
     def test_modified_file_updated_on_rebuild(
         self,
@@ -224,7 +237,7 @@ class TestRebuildIdempotent:
         """Dirty compensation must rebuild with real embeddings, not zero vectors."""
         registry = create_default_registry()
         scanner = Scanner(registry)
-        embedder = LocalNgramEmbedder()
+        embedder = LocalSemanticEmbedder(model_path=build_dense_model_path(hnsw_path))
         hnsw = HnswManager(hnsw_path, dim=embedder.dim)
         builder = IndexBuilder(
             engine,
@@ -254,23 +267,14 @@ class TestRebuildIdempotent:
             )
 
         scan = scanner.scan(corpus_copy, source_root_id=source_root_id)
-        trace = {"add_calls": 0, "rebuild_embedder": None}
-
-        original_add = hnsw.add_chunks_with_vectors
+        trace = {"rebuild_embedder": None}
         original_rebuild = hnsw.rebuild_from_db
-
-        def flaky_add(chunk_ids: list[str], vectors) -> None:
-            trace["add_calls"] += 1
-            if trace["add_calls"] == 1:
-                raise RuntimeError("simulated hnsw add failure")
-            original_add(chunk_ids, vectors)
 
         def capture_rebuild(engine_arg: Engine, embedder=None, reason=None) -> None:
             trace["rebuild_embedder"] = embedder
             trace["rebuild_reason"] = reason
             original_rebuild(engine_arg, embedder=embedder, reason=reason)
 
-        monkeypatch.setattr(hnsw, "add_chunks_with_vectors", flaky_add)
         monkeypatch.setattr(hnsw, "rebuild_from_db", capture_rebuild)
 
         result = builder.index_batch(
@@ -279,7 +283,7 @@ class TestRebuildIdempotent:
             trace_id=str(uuid.uuid4()),
         )
 
-        assert result.hnsw_status == "synced"
+        assert result.dense_reconcile_status == "synced"
         assert trace["rebuild_embedder"] is embedder
         assert hnsw.is_dirty() is False
         with session_scope(engine) as session:

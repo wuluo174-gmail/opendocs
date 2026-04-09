@@ -11,6 +11,7 @@ from sqlalchemy.engine import Engine
 
 from opendocs.app.index_service import IndexService
 from opendocs.app.source_service import SourceService
+from opendocs.indexing.semantic_indexer import SemanticIndexer
 from opendocs.storage.db import session_scope
 from opendocs.storage.repositories import AuditRepository
 
@@ -104,6 +105,56 @@ class TestWatcher:
                 text("SELECT chunk_id FROM chunk_fts WHERE chunk_fts MATCH 'UNIQUE_KW_WATCHER_MOD'")
             ).fetchall()
             assert len(rows) >= 1
+
+    def test_watcher_event_rebuilds_dense_artifact_back_to_committed_ready(
+        self,
+        source_service: SourceService,
+        index_service: IndexService,
+        engine: Engine,
+        hnsw_path: Path,
+        corpus_copy: Path,
+    ) -> None:
+        source = source_service.add_source(corpus_copy)
+        index_service.full_index_source(source.source_root_id)
+        initial_status = index_service.get_artifact_status()
+
+        status = index_service.start_watching_active_sources(debounce_seconds=0.3)
+        assert status.watcher_running is True
+
+        target_doc = corpus_copy / "watcher_budget_refresh.md"
+        try:
+            target_doc.write_text(
+                "# Watcher Budget\n\n"
+                "Project budget approved for the next quarter.\n"
+                "Quarterly funding discussion remains stable.\n",
+                encoding="utf-8",
+            )
+            time.sleep(2.5)
+        finally:
+            index_service.stop_watching()
+
+        artifact_status = index_service.get_artifact_status()
+        semantic_hits = SemanticIndexer(engine, hnsw_path=hnsw_path).query("cost plan", top_k=10)
+
+        with session_scope(engine) as session:
+            target_chunk_ids = {
+                row[0]
+                for row in session.execute(
+                    text(
+                        "SELECT c.chunk_id "
+                        "FROM chunks c "
+                        "JOIN documents d ON d.doc_id = c.doc_id "
+                        "WHERE d.path = :path"
+                    ),
+                    {"path": str(target_doc.resolve())},
+                ).fetchall()
+            }
+
+        assert artifact_status.freshness_status == "ready"
+        assert artifact_status.build_in_progress is False
+        assert artifact_status.generation > initial_status.generation
+        assert target_chunk_ids
+        assert any(hit.chunk_id in target_chunk_ids for hit in semantic_hits)
 
     def test_watcher_rename_preserves_doc_identity_and_initial_source_path(
         self,
@@ -314,3 +365,42 @@ class TestWatcher:
                     )
                 ).fetchall()
                 assert len(rows) >= 1
+
+    def test_watcher_coalesces_dense_reconcile_requests_into_one_build(
+        self,
+        source_service: SourceService,
+        index_service: IndexService,
+        corpus_copy: Path,
+        monkeypatch,
+    ) -> None:
+        source = source_service.add_source(corpus_copy)
+        index_service.full_index_source(source.source_root_id)
+
+        reconcile_reasons: list[str] = []
+        original_compensate = index_service._semantic_indexer.compensate_if_dirty
+
+        def wrapped_compensate_if_dirty(*, reason: str) -> str:
+            reconcile_reasons.append(reason)
+            return original_compensate(reason=reason)
+
+        monkeypatch.setattr(
+            index_service._semantic_indexer,
+            "compensate_if_dirty",
+            wrapped_compensate_if_dirty,
+        )
+
+        status = index_service.start_watching_active_sources(debounce_seconds=0.3)
+        assert status.watcher_running is True
+
+        try:
+            for suffix in ("one", "two", "three"):
+                (corpus_copy / f"watcher_coalesce_{suffix}.md").write_text(
+                    f"Watcher coalesce budget note {suffix}.",
+                    encoding="utf-8",
+                )
+            time.sleep(3.0)
+        finally:
+            index_service.stop_watching()
+
+        assert len(reconcile_reasons) == 1
+        assert reconcile_reasons[0] in {"watcher_created_change", "watcher_modified_change"}

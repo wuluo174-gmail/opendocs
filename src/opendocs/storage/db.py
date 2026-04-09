@@ -94,6 +94,11 @@ def _index_sql(connection: sqlite3.Connection, index_name: str) -> str | None:
     return row[0]
 
 
+def _has_any_row(connection: sqlite3.Connection, sql: str, params: tuple[object, ...] = ()) -> bool:
+    row = connection.execute(sql, params).fetchone()
+    return row is not None
+
+
 def _normalize_sql(sql: str) -> str:
     return re.sub(r"\s+", " ", sql).strip().lower()
 
@@ -210,6 +215,171 @@ def _schema_compatibility_issues(connection: sqlite3.Connection) -> list[str]:
         on_delete="RESTRICT",
     ):
         issues.append("scan_runs.source_root_id foreign key is missing")
+
+    index_artifacts_sql = _table_sql(connection, "index_artifacts")
+    if index_artifacts_sql is None:
+        issues.append("index_artifacts table is missing")
+    else:
+        index_artifact_columns = _table_info_map(connection, "index_artifacts")
+        for column_name in (
+            "namespace_path",
+            "generation",
+            "active_build_token",
+            "build_started_at",
+            "lease_expires_at",
+        ):
+            if column_name not in index_artifact_columns:
+                issues.append(f"index_artifacts.{column_name} column is missing")
+        if "artifact_path" in index_artifact_columns:
+            issues.append("index_artifacts still exposes legacy artifact_path instead of namespace_path")
+        normalized_index_artifacts_sql = _normalize_sql(index_artifacts_sql)
+        if "generation >= 0" not in normalized_index_artifacts_sql:
+            issues.append("index_artifacts generation contract is missing")
+        if "status in ('stale', 'ready', 'failed')" not in normalized_index_artifacts_sql:
+            issues.append("index_artifacts freshness-only status contract is stale")
+        lease_index_sql = _index_sql(connection, "idx_index_artifacts_active_build_token")
+        if lease_index_sql is None:
+            issues.append("index_artifacts idx_index_artifacts_active_build_token index is missing")
+        elif "where active_build_token is not null" not in _normalize_sql(lease_index_sql):
+            issues.append(
+                "index_artifacts idx_index_artifacts_active_build_token is not scoped to active leases"
+            )
+        if _has_any_row(
+            connection,
+            """
+            SELECT 1
+            FROM index_artifacts
+            WHERE status = 'building'
+            LIMIT 1
+            """,
+        ):
+            issues.append("index_artifacts contains legacy building rows")
+
+    generation_sql = _table_sql(connection, "index_artifact_generations")
+    if generation_sql is None:
+        issues.append("index_artifact_generations table is missing")
+    else:
+        generation_columns = _table_info_map(connection, "index_artifact_generations")
+        for column_name in (
+            "bundle_path",
+            "state",
+            "committed_at",
+            "retired_at",
+            "delete_after",
+            "deleted_at",
+            "updated_at",
+        ):
+            if column_name not in generation_columns:
+                issues.append(f"index_artifact_generations.{column_name} column is missing")
+        normalized_generation_sql = _normalize_sql(generation_sql)
+        if "generation > 0" not in normalized_generation_sql:
+            issues.append("index_artifact_generations generation contract is missing")
+        if "state in ('committed', 'retained', 'deleted')" not in normalized_generation_sql:
+            issues.append("index_artifact_generations state contract is missing")
+        committed_index_sql = _index_sql(connection, "idx_index_artifact_generations_committed")
+        if committed_index_sql is None:
+            issues.append("index_artifact_generations committed index is missing")
+        elif "where state = 'committed'" not in _normalize_sql(committed_index_sql):
+            issues.append(
+                "index_artifact_generations committed index is not scoped to committed rows"
+            )
+        gc_index_sql = _index_sql(connection, "idx_index_artifact_generations_gc_due")
+        if gc_index_sql is None:
+            issues.append("index_artifact_generations gc index is missing")
+        elif "where state = 'retained' and delete_after is not null" not in _normalize_sql(
+            gc_index_sql
+        ):
+            issues.append(
+                "index_artifact_generations gc index is not scoped to retained rows"
+            )
+
+    task_events_sql = _table_sql(connection, "task_events")
+    if task_events_sql is None:
+        issues.append("task_events table is missing")
+    else:
+        task_event_columns = _table_info_map(connection, "task_events")
+        for column_name in (
+            "trace_id",
+            "stage_id",
+            "task_type",
+            "scope_type",
+            "scope_id",
+            "input_summary",
+            "output_summary",
+            "related_chunk_ids_json",
+            "evidence_refs_json",
+            "occurred_at",
+            "persisted_at",
+        ):
+            if column_name not in task_event_columns:
+                issues.append(f"task_events.{column_name} column is missing")
+
+    memory_items_sql = _table_sql(connection, "memory_items")
+    if memory_items_sql is None:
+        issues.append("memory_items table is missing")
+    else:
+        memory_columns = _table_info_map(connection, "memory_items")
+        for column_name in (
+            "memory_kind",
+            "source_event_ids_json",
+            "evidence_refs_json",
+            "confidence",
+            "review_window_days",
+            "user_confirmed_count",
+            "last_user_confirmed_at",
+            "recall_count",
+            "last_recalled_at",
+            "decay_score",
+            "promotion_state",
+            "consolidated_from_json",
+            "supersedes_memory_id",
+        ):
+            if column_name not in memory_columns:
+                issues.append(f"memory_items.{column_name} column is missing")
+        for legacy_column in ("ttl_days", "confirmed_count", "last_confirmed_at", "created_at"):
+            if legacy_column in memory_columns:
+                issues.append(f"memory_items.{legacy_column} legacy column still exists")
+
+        normalized_memory_sql = _normalize_sql(memory_items_sql)
+        if "memory_type in ('m1', 'm2')" not in normalized_memory_sql:
+            issues.append("memory_items memory_type contract is stale")
+        if "scope_type in ('task', 'user')" not in normalized_memory_sql:
+            issues.append("memory_items scope_type contract is stale")
+        if "promotion_state in ('candidate', 'promoted')" not in normalized_memory_sql:
+            issues.append("memory_items promotion_state contract is missing")
+        if _has_any_row(
+            connection,
+            """
+            SELECT 1
+            FROM memory_items
+            WHERE json_array_length(source_event_ids_json) = 0
+            LIMIT 1
+            """,
+        ):
+            issues.append("memory_items contains rows without source_event_ids_json backing events")
+        if task_events_sql is not None and _has_any_row(
+            connection,
+            """
+            SELECT 1
+            FROM memory_items AS m
+            JOIN json_each(m.source_event_ids_json) AS ref
+            LEFT JOIN task_events AS t
+                ON t.event_id = ref.value
+            WHERE t.event_id IS NULL
+            LIMIT 1
+            """,
+        ):
+            issues.append("memory_items contains rows with dangling task_event references")
+
+    audit_logs_sql = _table_sql(connection, "audit_logs")
+    if audit_logs_sql is None:
+        issues.append("audit_logs table is missing")
+    else:
+        normalized_audit_sql = _normalize_sql(audit_logs_sql)
+        if "'task_event'" not in normalized_audit_sql:
+            issues.append("audit_logs target_type is missing task_event")
+        if "'artifact'" not in normalized_audit_sql:
+            issues.append("audit_logs target_type is missing artifact")
 
     return issues
 

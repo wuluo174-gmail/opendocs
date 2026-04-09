@@ -6,7 +6,7 @@
 
 ## 上下文
 
-主规范 §8.3 要求 chunk 保留 `heading_path`（标题路径）。对于 txt/md/docx，可以从文本结构或样式中精确提取标题层级。但 PDF 是面向渲染的格式，文本流中没有语义化的标题标记。
+主规范 `5.2 Chunk` 与 `FR-015 证据检查界面` 要求 chunk 保留 `heading_path`（标题路径）。对于 txt/md/docx，可以从文本结构或样式中精确提取标题层级。但 PDF 是面向渲染的格式，文本流中没有语义化的标题标记。
 
 ## 决策
 
@@ -20,7 +20,7 @@ PDF 的 heading_path 使用 PDF 书签（TOC / outline）作为来源：
 
 - 无书签的 PDF：heading_path 全部为 None。
 - 同一页内多个章节：后面的章节 heading_path 会覆盖前面的。
-- 扫描版 PDF（无文字层）：不在 MVP 范围内（规范 §3.5 明确排除 OCR）。
+- 扫描版 PDF（无文字层）：不在 MVP 范围内（主规范 `1.6 MVP Out of Scope` 已明确排除 OCR）。
 
 ## 替代方案
 

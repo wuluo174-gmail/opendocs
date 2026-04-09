@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy.engine import Engine
 
-from opendocs.app.index_service import IndexService
+from opendocs.app.runtime import OpenDocsRuntime
 from opendocs.app.search_service import SearchService
 from opendocs.app.source_service import SourceService
 from opendocs.retrieval.stage_search_corpus import (
@@ -35,26 +35,42 @@ def search_db(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
-def indexed_search_env(
-    search_corpus: Path, search_db: Path, tmp_path: Path
-) -> tuple[Engine, Path, Path]:
-    """Index the test corpus and return (engine, db_path, hnsw_path)."""
+def search_runtime(search_db: Path, tmp_path: Path) -> OpenDocsRuntime:
     init_db(search_db)
     engine = build_sqlite_engine(search_db)
     hnsw_path = tmp_path / "hnsw" / "test.hnsw"
     hnsw_path.parent.mkdir(parents=True, exist_ok=True)
+    runtime = OpenDocsRuntime(engine, hnsw_path=hnsw_path)
+    try:
+        yield runtime
+    finally:
+        runtime.close()
 
-    source = SourceService(engine).add_source(
+
+@pytest.fixture()
+def indexed_search_env(
+    search_corpus: Path,
+    search_db: Path,
+    search_runtime: OpenDocsRuntime,
+) -> tuple[Engine, Path, Path]:
+    """Index the test corpus and return (engine, db_path, hnsw_path)."""
+    engine = search_runtime.engine
+    hnsw_path = search_runtime.hnsw_path
+    assert hnsw_path is not None
+
+    source = SourceService(engine, runtime=search_runtime).add_source(
         search_corpus,
         default_metadata=build_s4_search_source_defaults(),
     )
-    IndexService(engine, hnsw_path=hnsw_path).full_index_source(source.source_root_id)
+    search_runtime.build_index_service().full_index_source(source.source_root_id)
 
     return engine, search_db, hnsw_path
 
 
 @pytest.fixture()
-def search_service(indexed_search_env: tuple[Engine, Path, Path]) -> SearchService:
+def search_service(
+    indexed_search_env: tuple[Engine, Path, Path],
+    search_runtime: OpenDocsRuntime,
+) -> SearchService:
     """Provide a SearchService with indexed test corpus."""
-    engine, _, hnsw_path = indexed_search_env
-    return SearchService(engine, hnsw_path=hnsw_path)
+    return search_runtime.build_search_service()

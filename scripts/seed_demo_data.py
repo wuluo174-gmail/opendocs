@@ -17,6 +17,7 @@ from opendocs.domain.models import (
     MemoryItemModel,
     RelationEdgeModel,
     SourceRootModel,
+    TaskEventModel,
 )
 from opendocs.exceptions import SchemaCompatibilityError
 from opendocs.storage.db import build_sqlite_engine, init_db, session_scope
@@ -29,6 +30,7 @@ from opendocs.storage.repositories import (
     PlanRepository,
     RelationRepository,
     SourceRepository,
+    TaskEventRepository,
 )
 from opendocs.utils.path_facts import (
     build_display_path,
@@ -42,12 +44,16 @@ DOC_ID = "00000000-0000-0000-0000-000000000101"
 CHUNK_ID = "00000000-0000-0000-0000-000000000201"
 MEMORY_ID = "00000000-0000-0000-0000-000000000301"
 PLAN_ID = "00000000-0000-0000-0000-000000000401"
+TASK_EVENT_ID = "00000000-0000-0000-0000-000000000451"
 KNOWLEDGE_ID = "00000000-0000-0000-0000-000000000601"
 RELATION_EDGE_ID = "00000000-0000-0000-0000-000000000701"
 AUDIT_ID = "00000000-0000-0000-0000-000000000501"
 DEMO_CHUNK_INDEX = 0
 DEMO_MEMORY_SCOPE_ID = "demo-task"
 DEMO_MEMORY_KEY = "owner"
+DEMO_TASK_TRACE_ID = "trace-seed-001"
+DEMO_TASK_STAGE_ID = "S1"
+DEMO_TASK_TYPE = "seed_demo"
 
 
 def _now() -> datetime:
@@ -92,6 +98,7 @@ def seed_demo_data(db_path: str | Path) -> dict[str, int]:
         "chunks": 0,
         "knowledge_items": 0,
         "relation_edges": 0,
+        "task_events": 0,
         "memory_items": 0,
         "file_operation_plans": 0,
         "audit_logs": 0,
@@ -105,6 +112,7 @@ def seed_demo_data(db_path: str | Path) -> dict[str, int]:
             plan_repo = PlanRepository(session)
             audit_repo = AuditRepository(session)
             source_repo = SourceRepository(session)
+            task_event_repo = TaskEventRepository(session)
 
             now = _now()
             source_root = source_repo.get_by_path(demo_source_root_path)
@@ -236,35 +244,6 @@ def seed_demo_data(db_path: str | Path) -> dict[str, int]:
                 )
                 inserted["relation_edges"] += 1
 
-            memory = memory_repo.get_by_scope_key(
-                memory_type="M1",
-                scope_type="task",
-                scope_id=DEMO_MEMORY_SCOPE_ID,
-                key=DEMO_MEMORY_KEY,
-            )
-            if memory is None:
-                memory_id = _preferred_or_new_id(
-                    MEMORY_ID,
-                    memory_repo.get_by_id(MEMORY_ID) is not None,
-                )
-                memory_repo.create(
-                    MemoryItemModel(
-                        memory_id=memory_id,
-                        memory_type="M1",
-                        scope_type="task",
-                        scope_id=DEMO_MEMORY_SCOPE_ID,
-                        key=DEMO_MEMORY_KEY,
-                        content="Alice",
-                        importance=0.8,
-                        status="active",
-                        ttl_days=30,
-                        confirmed_count=1,
-                        last_confirmed_at=now,
-                        updated_at=now,
-                    )
-                )
-                inserted["memory_items"] += 1
-
             if plan_repo.get_by_id(PLAN_ID) is None:
                 plan_repo.create(
                     FileOperationPlanModel(
@@ -285,6 +264,90 @@ def seed_demo_data(db_path: str | Path) -> dict[str, int]:
                 )
                 inserted["file_operation_plans"] += 1
 
+            task_event = task_event_repo.find_by_business_key(
+                trace_id=DEMO_TASK_TRACE_ID,
+                stage_id=DEMO_TASK_STAGE_ID,
+                task_type=DEMO_TASK_TYPE,
+                scope_type="task",
+                scope_id=DEMO_MEMORY_SCOPE_ID,
+            )
+            if task_event is None:
+                preferred_event_id = (
+                    TASK_EVENT_ID
+                    if task_event_repo.get_by_id(TASK_EVENT_ID) is None
+                    else str(uuid.uuid4())
+                )
+                task_event = task_event_repo.create(
+                    TaskEventModel(
+                        event_id=preferred_event_id,
+                        trace_id=DEMO_TASK_TRACE_ID,
+                        stage_id=DEMO_TASK_STAGE_ID,
+                        task_type=DEMO_TASK_TYPE,
+                        scope_type="task",
+                        scope_id=DEMO_MEMORY_SCOPE_ID,
+                        input_summary="Seed demo data for S1 storage baseline",
+                        output_summary="Created demo storage baseline sample entities",
+                        related_chunk_ids_json=[chunk.chunk_id],
+                        evidence_refs_json=[
+                            {
+                                "doc_id": document.doc_id,
+                                "chunk_id": chunk.chunk_id,
+                                "path": document.path,
+                                "quote_preview": chunk.text[:48],
+                            }
+                        ],
+                        artifact_ref=document.path,
+                        occurred_at=now,
+                        persisted_at=now,
+                    )
+                )
+                inserted["task_events"] += 1
+
+            memory = memory_repo.get_by_scope_key(
+                memory_type="M1",
+                scope_type="task",
+                scope_id=DEMO_MEMORY_SCOPE_ID,
+                key=DEMO_MEMORY_KEY,
+            )
+            if memory is None:
+                memory_id = _preferred_or_new_id(
+                    MEMORY_ID,
+                    memory_repo.get_by_id(MEMORY_ID) is not None,
+                )
+                memory_repo.create(
+                    MemoryItemModel(
+                        memory_id=memory_id,
+                        memory_type="M1",
+                        memory_kind="task_snapshot",
+                        scope_type="task",
+                        scope_id=DEMO_MEMORY_SCOPE_ID,
+                        key=DEMO_MEMORY_KEY,
+                        content="Alice",
+                        source_event_ids_json=[task_event.event_id],
+                        evidence_refs_json=[
+                            {
+                                "doc_id": document.doc_id,
+                                "chunk_id": chunk.chunk_id,
+                                "path": document.path,
+                            }
+                        ],
+                        importance=0.8,
+                        confidence=0.9,
+                        status="active",
+                        review_window_days=30,
+                        user_confirmed_count=1,
+                        last_user_confirmed_at=now,
+                        recall_count=0,
+                        last_recalled_at=None,
+                        decay_score=0.0,
+                        promotion_state="promoted",
+                        consolidated_from_json=[],
+                        supersedes_memory_id=None,
+                        updated_at=now,
+                    )
+                )
+                inserted["memory_items"] += 1
+
             if audit_repo.get_by_id(AUDIT_ID) is None:
                 audit_repo.create(
                     AuditLogModel(
@@ -300,7 +363,7 @@ def seed_demo_data(db_path: str | Path) -> dict[str, int]:
                             "chunk_id": chunk.chunk_id,
                             "note": "seed for S1 tests",
                         },
-                        trace_id="trace-seed-001",
+                        trace_id=DEMO_TASK_TRACE_ID,
                     )
                 )
                 inserted["audit_logs"] += 1

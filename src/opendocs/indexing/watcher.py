@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -34,6 +35,101 @@ class _WatcherEvent:
     path: str
     event_type: str
     scanned: ScannedFile | None = None
+
+
+class _DenseReconcileCoordinator:
+    """Own coalesced dense reconcile requests independently from file events."""
+
+    def __init__(
+        self,
+        callback: Any | None,
+        *,
+        debounce_seconds: float,
+    ) -> None:
+        self._callback = callback
+        self._debounce = max(0.0, debounce_seconds)
+        self._lock = threading.Lock()
+        self._cv = threading.Condition(self._lock)
+        self._worker: threading.Thread | None = None
+        self._stop_requested = False
+        self._pending = False
+        self._pending_reason: str | None = None
+        self._in_progress = False
+        self._last_status: str | None = None
+
+    def start(self) -> None:
+        if self._callback is None:
+            return
+        with self._lock:
+            if self._worker is not None and self._worker.is_alive():
+                return
+            self._stop_requested = False
+            self._worker = threading.Thread(
+                target=self._run,
+                name="OpenDocsDenseReconcileWorker",
+                daemon=True,
+            )
+            self._worker.start()
+
+    def stop(self) -> None:
+        with self._lock:
+            self._stop_requested = True
+            self._cv.notify_all()
+            worker = self._worker
+        if worker is not None:
+            worker.join(timeout=5)
+        with self._lock:
+            self._worker = None
+            self._pending = False
+            self._pending_reason = None
+            self._in_progress = False
+
+    def request(self, *, reason: str) -> str | None:
+        if self._callback is None:
+            return None
+        with self._lock:
+            self._pending = True
+            self._pending_reason = reason
+            self._cv.notify_all()
+        return "queued"
+
+    def _run(self) -> None:
+        while True:
+            with self._lock:
+                while not self._pending and not self._stop_requested:
+                    self._cv.wait()
+                if self._stop_requested and not self._pending:
+                    return
+
+                debounce_deadline = time.monotonic() + self._debounce
+                while not self._stop_requested:
+                    remaining = debounce_deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    self._cv.wait(timeout=remaining)
+                    if self._pending:
+                        debounce_deadline = time.monotonic() + self._debounce
+
+                reason = self._pending_reason or "watcher_reconcile"
+                self._pending = False
+                self._pending_reason = None
+                self._in_progress = True
+
+            try:
+                status = self._callback(reason=reason)
+            except Exception:
+                logger.exception("Dense reconcile callback failed for reason=%s", reason)
+                status = "degraded"
+
+            with self._lock:
+                self._in_progress = False
+                self._last_status = status
+                if status == "building" and not self._stop_requested:
+                    self._pending = True
+                    self._pending_reason = reason
+                    self._cv.notify_all()
+                elif self._stop_requested and not self._pending:
+                    self._cv.notify_all()
 
 
 class _DebouncedHandler(FileSystemEventHandler):
@@ -187,17 +283,23 @@ class IndexWatcher:
         registry: Any,
         *,
         debounce_seconds: float = 1.0,
+        dense_compensator: Any | None = None,
     ) -> None:
         self._engine = engine
         self._builder = index_builder
         self._registry = registry
         self._debounce = debounce_seconds
+        self._dense_compensator = dense_compensator
         self._observer: Observer | None = None
         self._worker: threading.Thread | None = None
         self._event_queue: Queue[_WatcherEvent] = Queue()
         self._handlers: list[_DebouncedHandler] = []
         self._watched_paths: list[str] = []
         self._watched_source_ids: list[str] = []
+        self._dense_reconcile = _DenseReconcileCoordinator(
+            dense_compensator,
+            debounce_seconds=max(self._debounce, 0.2),
+        )
 
     def start(self, sources: list[Any]) -> int:
         """Start watching all active source roots."""
@@ -239,6 +341,7 @@ class IndexWatcher:
             logger.info("IndexWatcher skipped: no readable active sources to watch")
             return 0
 
+        self._dense_reconcile.start()
         self._start_worker()
         self._observer.start()
         logger.info("IndexWatcher started for %d sources", len(self._watched_paths))
@@ -252,6 +355,7 @@ class IndexWatcher:
             self._observer.join(timeout=5)
             self._observer = None
         self._stop_worker()
+        self._dense_reconcile.stop()
         self._handlers.clear()
         self._watched_paths.clear()
         self._watched_source_ids.clear()
@@ -345,6 +449,7 @@ class IndexWatcher:
             return
         trace_id = str(uuid.uuid4())
         status = "unknown"
+        dense_reconcile_status: str | None = None
         document_id: str | None = None
         try:
             result = self._builder.index_file(
@@ -355,6 +460,10 @@ class IndexWatcher:
             )
             status = result.status
             document_id = result.doc_id or None
+            if status in {"success", "partial", "skipped"}:
+                dense_reconcile_status = self._request_dense_reconcile(
+                    reason=f"watcher_{event.event_type}_change"
+                )
         except Exception:
             status = "error"
             logger.exception("Watcher index failed for %s", scanned.path)
@@ -366,6 +475,7 @@ class IndexWatcher:
             status=status,
             trace_id=trace_id,
             document_id=document_id,
+            dense_reconcile_status=dense_reconcile_status,
         )
 
     def _process_file_deleted(self, event: _WatcherEvent) -> None:
@@ -375,6 +485,7 @@ class IndexWatcher:
 
         resolved_path = event.path
         status = "not_found"
+        dense_reconcile_status: str | None = None
         doc = None
         document_id: str | None = None
         try:
@@ -393,6 +504,8 @@ class IndexWatcher:
                     expected_path=resolved_path,
                 )
                 status = "success" if removed else "not_found"
+            if status in {"success", "not_found"}:
+                dense_reconcile_status = self._request_dense_reconcile(reason="watcher_deleted")
         except Exception:
             status = "error"
             logger.exception("Watcher delete failed for %s", resolved_path)
@@ -404,6 +517,7 @@ class IndexWatcher:
             status=status,
             trace_id=trace_id,
             document_id=document_id,
+            dense_reconcile_status=dense_reconcile_status,
         )
 
     def _write_watcher_audit(
@@ -415,6 +529,7 @@ class IndexWatcher:
         status: str,
         trace_id: str,
         document_id: str | None = None,
+        dense_reconcile_status: str | None = None,
     ) -> None:
         """Write a watcher_event audit record (best-effort, never throws)."""
         try:
@@ -441,6 +556,7 @@ class IndexWatcher:
                         event_type=event_type,
                         status=status,
                         document_id=document_id,
+                        dense_reconcile_status=dense_reconcile_status,
                     ),
                     trace_id=trace_id,
                 )
@@ -448,3 +564,6 @@ class IndexWatcher:
                 flush_audit_to_jsonl(audit_record)
         except Exception:
             logger.warning("Failed to write watcher_event audit for %s", path)
+
+    def _request_dense_reconcile(self, *, reason: str) -> str | None:
+        return self._dense_reconcile.request(reason=reason)

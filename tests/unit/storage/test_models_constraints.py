@@ -21,6 +21,7 @@ from opendocs.domain.models import (
     RelationEdgeModel,
     ScanRunModel,
     SourceRootModel,
+    TaskEventModel,
 )
 from opendocs.utils.path_facts import build_display_path, derive_directory_facts
 
@@ -370,14 +371,42 @@ def test_memory_type_check_constraint(session: Session) -> None:
     memory = MemoryItemModel(
         memory_id=str(uuid.uuid4()),
         memory_type="M9",
+        memory_kind="task_snapshot",
         scope_type="task",
         scope_id="task-1",
         key="key",
         content="value",
+        source_event_ids_json=["event-1"],
+        evidence_refs_json=[],
         importance=0.8,
+        confidence=0.7,
         status="active",
+        review_window_days=30,
+        user_confirmed_count=0,
+        recall_count=0,
+        decay_score=0.0,
+        promotion_state="promoted",
+        consolidated_from_json=[],
     )
     session.add(memory)
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def test_task_event_scope_type_check_constraint(session: Session) -> None:
+    task_event = TaskEventModel(
+        event_id=str(uuid.uuid4()),
+        trace_id="trace-task",
+        stage_id="S1",
+        task_type="seed_demo",
+        scope_type="invalid",
+        scope_id="scope-1",
+        input_summary="input",
+        output_summary="output",
+        related_chunk_ids_json=[],
+        evidence_refs_json=[],
+    )
+    session.add(task_event)
     with pytest.raises(IntegrityError):
         session.commit()
 
@@ -493,17 +522,26 @@ def test_chunk_char_end_must_not_be_less_than_char_start(
         session.commit()
 
 
-def test_memory_ttl_days_must_be_non_negative(session: Session) -> None:
+def test_memory_review_window_days_must_be_non_negative(session: Session) -> None:
     memory = MemoryItemModel(
         memory_id=str(uuid.uuid4()),
         memory_type="M1",
+        memory_kind="task_snapshot",
         scope_type="task",
         scope_id="task-1",
         key="deadline",
         content="soon",
+        source_event_ids_json=["event-1"],
+        evidence_refs_json=[],
         importance=0.8,
+        confidence=0.7,
         status="active",
-        ttl_days=-1,
+        review_window_days=-1,
+        user_confirmed_count=0,
+        recall_count=0,
+        decay_score=0.0,
+        promotion_state="promoted",
+        consolidated_from_json=[],
     )
     session.add(memory)
     with pytest.raises(IntegrityError):
@@ -537,12 +575,22 @@ def test_memory_importance_must_be_in_range(session: Session) -> None:
     memory = MemoryItemModel(
         memory_id=str(uuid.uuid4()),
         memory_type="M1",
+        memory_kind="task_snapshot",
         scope_type="task",
         scope_id="task-1",
         key="oob-importance",
         content="test",
+        source_event_ids_json=["event-1"],
+        evidence_refs_json=[],
         importance=1.5,
+        confidence=0.7,
         status="active",
+        review_window_days=30,
+        user_confirmed_count=0,
+        recall_count=0,
+        decay_score=0.0,
+        promotion_state="promoted",
+        consolidated_from_json=[],
     )
     session.add(memory)
     with pytest.raises(IntegrityError):

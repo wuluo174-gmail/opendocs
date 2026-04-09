@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
 from sqlalchemy import text
 
-from opendocs.app.index_service import IndexService
+from opendocs.app.runtime import OpenDocsRuntime
 from opendocs.app.search_service import SearchService
 from opendocs.indexing.hnsw_manager import HnswManager
-from opendocs.retrieval.embedder import LocalNgramEmbedder
+from opendocs.retrieval.embedder import LocalSemanticEmbedder, build_dense_model_path
 from opendocs.retrieval.filters import SearchFilter
 from opendocs.retrieval.stage_golden_queries import (
     S4_EXPECTED_SYNONYM_QUERY_COUNT,
@@ -18,6 +19,18 @@ from opendocs.retrieval.stage_golden_queries import (
 )
 from opendocs.storage.db import session_scope
 from opendocs.utils.logging import init_logging
+from opendocs.utils.time import utcnow_naive
+
+
+def _committed_hnsw_path(engine) -> Path:
+    with session_scope(engine) as session:
+        artifact_path = session.execute(
+            text(
+                "SELECT bundle_path FROM index_artifact_generations "
+                "WHERE artifact_name = 'dense_hnsw' AND state = 'committed'"
+            )
+        ).scalar_one()
+    return Path(artifact_path)
 
 
 class TestHybridSearch:
@@ -60,6 +73,102 @@ class TestHybridSearch:
         paths = [r.citation.path for r in resp.results]
         assert any("en_weekly_report" in p for p in paths)
 
+    def test_dense_semantic_model_boosts_runtime_owned_budget_concept(
+        self,
+        indexed_search_env,
+        search_corpus: Path,
+        search_runtime,
+    ) -> None:
+        engine, _, _ = indexed_search_env
+        budget_doc = search_corpus / "budget_review.md"
+        budget_doc.write_text(
+            "# Budget Review\n\nProject budget approved for the next planning cycle.",
+            encoding="utf-8",
+        )
+
+        with session_scope(engine) as session:
+            source_root_id = session.execute(
+                text("SELECT source_root_id FROM source_roots ORDER BY path LIMIT 1")
+            ).scalar_one()
+
+        search_runtime.build_index_service().update_index_for_changes(source_root_id)
+        service = search_runtime.build_search_service()
+
+        resp = service.search("cost plan", top_k=3)
+
+        assert len(resp.results) > 0
+        assert "budget_review" in resp.results[0].path
+
+    def test_stale_public_status_does_not_hide_readable_committed_dense_generation(
+        self,
+        indexed_search_env,
+        search_runtime,
+    ) -> None:
+        engine, _, _ = indexed_search_env
+        service = search_runtime.build_search_service()
+        baseline = service.search("项目", top_k=10)
+
+        assert len(baseline.results) > 0
+        assert any(result.score_breakdown.dense_normalized > 0 for result in baseline.results)
+
+        build_started_at = utcnow_naive() - timedelta(minutes=1)
+        with session_scope(engine) as session:
+            session.execute(
+                text(
+                    "UPDATE index_artifacts "
+                    "SET status = 'stale', "
+                    "    active_build_token = :token, "
+                    "    build_started_at = :started, "
+                    "    lease_expires_at = :expires, "
+                    "    last_reason = 'watcher_modified_change' "
+                    "WHERE artifact_name = 'dense_hnsw'"
+                ),
+                {
+                    "token": "active-build-token",
+                    "started": build_started_at,
+                    "expires": build_started_at + timedelta(minutes=5),
+                },
+            )
+
+        during_build = service.search("项目", top_k=10)
+
+        assert len(during_build.results) > 0
+        assert any(result.score_breakdown.dense_normalized > 0 for result in during_build.results)
+
+    def test_rebuild_keeps_previous_committed_bundle_readable_for_inflight_readers(
+        self,
+        indexed_search_env,
+        search_corpus: Path,
+        search_runtime,
+    ) -> None:
+        engine, _, hnsw_path = indexed_search_env
+        old_bundle_path = _committed_hnsw_path(engine).resolve()
+        old_embedder = LocalSemanticEmbedder(model_path=build_dense_model_path(old_bundle_path))
+        delayed_reader = HnswManager(
+            old_bundle_path,
+            dim=old_embedder.dim,
+            namespace_path=hnsw_path,
+            allow_create_if_missing=False,
+        )
+
+        search_corpus.joinpath("retained_bundle_note.md").write_text(
+            "# Retained Bundle\n\n"
+            "Budget oversight remains within quarterly target.\n"
+            "Funding review stays stable.\n",
+            encoding="utf-8",
+        )
+        with session_scope(engine) as session:
+            source_root_id = session.execute(
+                text("SELECT source_root_id FROM source_roots ORDER BY path LIMIT 1")
+            ).scalar_one()
+
+        search_runtime.build_index_service().update_index_for_changes(source_root_id)
+        new_bundle_path = _committed_hnsw_path(engine).resolve()
+
+        assert new_bundle_path != old_bundle_path
+        assert old_bundle_path.exists()
+        assert delayed_reader.query(old_embedder.embed_text("项目"), k=5)
+
     def test_mixed_language_query(self, search_service: SearchService) -> None:
         resp = search_service.search("machine learning")
         assert len(resp.results) > 0
@@ -70,8 +179,9 @@ class TestHybridSearch:
         self,
         indexed_search_env,
         search_corpus: Path,
+        search_runtime,
     ) -> None:
-        engine, _, hnsw_path = indexed_search_env
+        engine, _, _ = indexed_search_env
         hyphen_doc = search_corpus / "hyphenated_note.md"
         hyphen_doc.write_text("# Shared\n\nshared-needle retrieval target", encoding="utf-8")
 
@@ -80,8 +190,8 @@ class TestHybridSearch:
                 text("SELECT source_root_id FROM source_roots ORDER BY path LIMIT 1")
             ).scalar_one()
 
-        IndexService(engine, hnsw_path=hnsw_path).update_index_for_changes(source_root_id)
-        service = SearchService(engine, hnsw_path=hnsw_path)
+        search_runtime.build_index_service().update_index_for_changes(source_root_id)
+        service = search_runtime.build_search_service()
 
         resp = service.search("shared-needle", top_k=10)
 
@@ -92,9 +202,10 @@ class TestHybridSearch:
         self,
         indexed_search_env,
         monkeypatch,
+        search_runtime,
     ) -> None:
-        engine, _, hnsw_path = indexed_search_env
-        service = SearchService(engine, hnsw_path=hnsw_path)
+        _engine, _, _hnsw_path = indexed_search_env
+        service = search_runtime.build_search_service()
 
         def fail_ann_query(self, vector, k):  # pragma: no cover - fail-fast guard
             raise AssertionError("filtered dense search must not call HNSW ANN query")
@@ -144,6 +255,7 @@ class TestHybridSearch:
         indexed_search_env,
         query: str,
         expect_path_fragment: str,
+        search_runtime,
     ) -> None:
         """Legacy 64-dim HNSW files must be repaired before the first dense-only query."""
         engine, _, hnsw_path = indexed_search_env
@@ -152,7 +264,7 @@ class TestHybridSearch:
         legacy_hnsw.rebuild_from_db(engine)
         assert legacy_hnsw.is_dirty() is False
 
-        service = SearchService(engine, hnsw_path=hnsw_path)
+        service = search_runtime.build_search_service()
         resp = service.search(query)
 
         assert len(resp.results) > 0
@@ -162,9 +274,10 @@ class TestHybridSearch:
     def test_startup_repairs_same_dim_signature_mismatch(
         self,
         indexed_search_env,
+        search_runtime,
     ) -> None:
         """Signature drift must rebuild even when HNSW dim has not changed."""
-        engine, _, hnsw_path = indexed_search_env
+        engine, _, _ = indexed_search_env
 
         with session_scope(engine) as session:
             session.execute(
@@ -176,7 +289,7 @@ class TestHybridSearch:
                 {"sig": "legacy-same-dim-signature"},
             )
 
-        service = SearchService(engine, hnsw_path=hnsw_path)
+        service = search_runtime.build_search_service()
         resp = service.search("AI")
 
         assert len(resp.results) > 0
@@ -189,20 +302,22 @@ class TestHybridSearch:
                 )
             ).one()
         assert row[0] == "ready"
-        assert row[1] == LocalNgramEmbedder().fingerprint
+        embedder = LocalSemanticEmbedder(model_path=build_dense_model_path(_committed_hnsw_path(engine)))
+        assert row[1] == embedder.fingerprint
         assert row[2] == "embedder_signature_changed"
 
     def test_startup_repairs_missing_vector_sidecar(
         self,
         indexed_search_env,
+        search_runtime,
     ) -> None:
         """Dense artifact must rebuild if the exact-score vector sidecar is missing."""
-        engine, _, hnsw_path = indexed_search_env
-        vectors_path = hnsw_path.with_suffix(".hnsw_vectors.npy")
+        engine, _, _ = indexed_search_env
+        vectors_path = _committed_hnsw_path(engine).with_suffix(".hnsw_vectors.npy")
         assert vectors_path.exists()
         vectors_path.unlink()
 
-        service = SearchService(engine, hnsw_path=hnsw_path)
+        service = search_runtime.build_search_service()
         resp = service.search("AI")
 
         assert len(resp.results) > 0
@@ -215,7 +330,8 @@ class TestHybridSearch:
                 )
             ).one()
         assert row[0] == "ready"
-        assert row[1] == LocalNgramEmbedder().fingerprint
+        embedder = LocalSemanticEmbedder(model_path=build_dense_model_path(_committed_hnsw_path(engine)))
+        assert row[1] == embedder.fingerprint
         assert row[2] == "vectors_file_missing"
 
 
@@ -255,10 +371,11 @@ class TestSearchResultStructure:
         self,
         indexed_search_env,
         tmp_path: Path,
+        search_runtime,
     ) -> None:
-        engine, _, hnsw_path = indexed_search_env
+        _engine, _, _hnsw_path = indexed_search_env
         init_logging(tmp_path / "logs")
-        service = SearchService(engine, hnsw_path=hnsw_path)
+        service = search_runtime.build_search_service()
 
         service.search("password=abc123 token=mytoken secret=hide-me")
 
